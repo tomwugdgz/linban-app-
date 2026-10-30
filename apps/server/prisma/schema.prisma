@@ -1,0 +1,2252 @@
+// ============================================================================
+// 邻伴 · 社区养老陪伴匹配平台 —— Prisma Schema（v1.0）
+// 作者：宋砚秋（Cyrus Ledger）｜ 团队：rnd-linban ｜ 2026-09
+// 上游依据：docs/ARCHITECTURE.md v1.0（顾图南）——表名/状态枚举/配置默认值
+// 均以架构文档为单一事实源，不得在本文件自创状态或模块。
+//
+// 约定（详见 docs/DATABASE.md）：
+//   1. 金额一律 BigInt 存「分」，禁止浮点；抽成比例用基点(bp)整数快照。
+//   2. 主键 BigInt 自增；业务单号（order_no/payment_no/...）独立唯一列。
+//   3. 时间统一存 UTC（MySQL DATETIME(3)），仅在展示层转 Asia/Shanghai。
+//   4. 模型 PascalCase + @@map 到下划线表名；字段直接下划线命名，无需 @map。
+//   5. MySQL 无部分唯一索引：「仅一条生效」语义用可空守卫列
+//      （slot_guard / active_key，生效时存常量、失效时置 NULL）实现。
+//   6. 加密字段（_cipher）为 AES-256-GCM base64 密文；_hmac 为 HMAC-SHA256
+//      盲索引（hex），仅手机号等需检索字段建唯一索引。
+//   7. 一切资金/服务动作可回放：流水表（payments/profit_sharing_records/
+//      deposit_transactions/order_timeline/credit_logs/audit_logs）只插入不更新。
+//   8. 实现注意（服务端集成必读）：
+//      a. BigInt 字段（金额/ID）在 Node 侧为原生 BigInt，JSON.stringify 会抛
+//         "Do not know how to serialize a BigInt"——API 出参必须统一转字符串
+//         （响应拦截器或 toJSON 助手），杜绝浮点与精度丢失。
+//      b. DATABASE_URL 须带 timezone=UTC（如 ...?timezone=UTC），MySQL 容器
+//         time_zone='+00:00'；全链路存 UTC，仅展示层转 Asia/Shanghai。
+//      c. 守卫列（slot_guard/active_key）由服务层维护：占用/生效置常量，
+//         释放/失效置 NULL；DB 无触发器、无部分索引可替代。
+//      d. JSON 列无 DB 默认值，写入必须给完整对象；枚举落 VARCHAR，新增值
+//         无需 DDL，删除/改名前必须先清存量数据并停用代码引用。
+//      e. 迁移：开发期 migrate dev，生产 migrate deploy 且先备份（见 DATABASE.md §9）。
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// 枚举定义（订单/四审/分账等状态机与架构 §6.5/§6.6/§7 严格一致）
+// ---------------------------------------------------------------------------
+
+/// 三端账号角色：老人 / 子女（代操作）/ 陪聊员；后台角色走 admins-roles RBAC
+enum user_role {
+  ELDER
+  FAMILY
+  COMPANION
+  /// 系统服务账号（主理人裁定 A2，2026-10）：仅供系统自动流程引用
+  /// （健康告警 escalate 落 complaints 的 complainant_id 必填 FK，无真人发起方）。
+  /// 约束：不可登录、不得被业务接口选为操作人、不计入任何用户/陪聊员统计口径。
+  SYSTEM
+}
+
+/// 账号状态：CANCELLED = 注销冷静期及以后（到期匿名化，见 §10.1）
+enum user_status {
+  ACTIVE
+  FROZEN
+  CANCELLED
+}
+
+/// 订单状态机（架构 §6.5，12 态，禁止增删）
+enum order_status {
+  CREATED           // 下单锁时段，15min 支付超时
+  PAID              // 支付成功，待分账冻结
+  DISPATCHED        // 派单引擎 TopN 推送
+  ACCEPTED          // 陪聊员接单
+  ARRIVED           // 到岗核销通过
+  IN_SERVICE        // 服务中
+  PENDING_CONFIRM   // 服务结束待双方确认
+  COMPLETED         // 双方确认完成（触发分账）
+  SUSPENDED         // 异常/投诉挂起（客服裁决）
+  CANCELLED         // 取消（未服务或违约取消）
+  CLOSED            // 评价完成/超时关闭
+  REFUNDED          // 已退款（分账回退完成）
+}
+
+/// 服务类型（主理人裁定：MVP 只开 CHAT；ACCOMPANY 枚举预留、后台不开入口）
+enum service_type {
+  CHAT       // 陪聊
+  ACCOMPANY  // 陪行/陪逛（预留，MVP 不开放）
+}
+
+/// 支付单状态（对齐微信交易状态语义）
+enum payment_status {
+  PENDING   // 待支付
+  SUCCESS   // 支付成功
+  REFUNDED  // 已全额退款（部分退见 refund_amount_fen）
+  CLOSED    // 超时关单
+  FAILED    // 支付失败
+}
+
+/// 分账记录三态（架构 §5.1/§7：冻结 → 已分账 / 已回退）
+enum profit_sharing_status {
+  FROZEN    // 待分账冻结（付款即冻，陪聊员可见不可取）
+  SHARED    // 已分账（平台留成 + 陪聊员直达）
+  RETURNED  // 已回退（解冻/回退用户）
+}
+
+/// 提现单状态（备选结算模式使用；默认分账直达模式下低频）
+enum withdrawal_status {
+  PENDING_REVIEW // 待审核（T+1，finance 角色）
+  APPROVED       // 审核通过
+  REJECTED       // 审核驳回
+  PROCESSING     // 微信提现处理中
+  SUCCESS        // 到账成功
+  FAILED         // 到账失败
+}
+
+/// 对账渠道
+enum recon_channel {
+  WX_PAY      // 微信支付
+  WX_SHARING  // 微信分账
+  WX_REFUND   // 微信退款/回退
+  WX_WITHDRAW // 微信商户提现
+}
+
+/// 对账批次状态
+enum recon_status {
+  PENDING  // 待执行
+  RUNNING  // 执行中
+  MATCHED  // 无差异
+  DIFF     // 有差异（告警）
+  RESOLVED // 差异已处理
+}
+
+/// 陪聊员四审流阶段（架构 §6.6，10 态，禁止增删）
+enum application_stage {
+  APPLIED      // 注册申请
+  REALNAME_OK  // ①实名通过
+  FACE_OK      // ②人脸通过
+  CRIMINAL_OK  // ③无犯罪记录通过
+  TRAINING     // 培训中
+  EXAM_OK      // 考试通过（≥80 分）
+  DEPOSIT_OK   // ④保证金缴纳完成
+  ACTIVE       // 四审通过，上架接单
+  SUSPENDED    // 暂停接单
+  BANNED       // 黑名单清退
+}
+
+/// 四审单步审核结果
+enum step_status {
+  PENDING
+  PASSED
+  REJECTED
+}
+
+/// 陪聊员主档状态（与 §6.6 的 ACTIVE/SUSPENDED/BANNED 对齐；
+/// PENDING=审核中未上架；RETIRED=正常退出，保证金 30 天无纠纷原路退）
+enum companion_status {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  BANNED
+  RETIRED
+}
+
+/// 核销类型：到岗核销 / 完成确认（双方确认）
+enum verification_type {
+  ARRIVAL
+  COMPLETION
+}
+
+/// 核销记录状态
+enum verification_status {
+  PENDING
+  PASSED
+  FAILED
+  EXPIRED
+}
+
+/// 动态码出示方式：老人出示 / 陪聊员扫码
+enum code_mode {
+  ELDER_SHOW
+  COMPANION_SCAN
+}
+
+/// 保证金流水类型
+enum deposit_tx_type {
+  IN       // 缴纳
+  OUT      // 退出退还
+  PENALTY  // 罚扣
+}
+
+/// 保证金流水状态
+enum tx_status {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+/// 信用分明细事由（规则数值见架构 §8.3，进 domain 层）
+enum credit_log_type {
+  GOOD_REVIEW
+  BAD_REVIEW
+  CANCEL
+  IM_VIOLATION
+  FLY_ORDER
+  MANUAL
+  SYSTEM
+}
+
+/// 日程状态：可约 / 拉黑（停接）
+enum schedule_status {
+  AVAILABLE
+  BLACKOUT
+}
+
+/// IM 消息类型
+enum im_message_type {
+  TEXT
+  IMAGE
+  VOICE
+  SYSTEM
+}
+
+/// IM 消息状态：撤回 / 被拦截（风控命中）
+enum im_message_status {
+  NORMAL
+  REVOKED
+  BLOCKED
+}
+
+/// IM 内容审核状态（微信 msgSecCheck/imgSecCheck + 人工）
+enum im_review_status {
+  PENDING
+  PASS
+  REJECT
+}
+
+/// IM 发送方角色
+enum im_sender_role {
+  USER
+  COMPANION
+  SYSTEM
+}
+
+/// 隐私号绑定状态
+enum privacy_binding_status {
+  ACTIVE
+  EXPIRED
+  UNBOUND
+}
+
+/// 评价审核状态
+enum review_status {
+  PENDING
+  APPROVED
+  REJECTED
+  HIDDEN
+}
+
+/// 子女授权范围（架构 §10.1：基础 / 服务进度 / 全部）
+enum auth_level {
+  BASIC
+  PROGRESS
+  FULL
+}
+
+/// 家庭绑定状态
+enum family_binding_status {
+  PENDING
+  ACTIVE
+  REVOKED
+}
+
+/// 孝心时长卡状态
+enum gift_card_status {
+  ACTIVE
+  USED
+  EXPIRED
+  REFUNDED
+}
+
+/// 券类型：满减券 / 时长抵扣券
+enum coupon_type {
+  FULL_REDUCTION
+  DURATION
+}
+
+/// 用户券状态
+enum user_coupon_status {
+  UNUSED
+  USED
+  EXPIRED
+}
+
+/// 用户券来源
+enum user_coupon_source {
+  REPURCHASE   // 复购发放
+  REPORT_REWARD// 举报奖励
+  COMPLAINT    // 投诉补偿
+  INVITE       // 老带新
+  ACTIVITY_LEAD// 健康感知引流新装券（获客成本，架构 §13.11 activity_lead_incentive_newinstall）
+  MANUAL       // 后台手动
+}
+
+/// 佣金流水类型
+enum commission_type {
+  ORDER_COMMISSION // 订单分销佣金
+  INVITE_REWARD    // 拉新奖励
+}
+
+/// 佣金流水状态
+enum commission_status {
+  PENDING   // 待结算
+  SETTLED   // 已结算
+  PAID      // 已打款
+  CANCELLED // 已取消（订单退款联动）
+}
+
+/// 保单状态（MVP 半自动登记）
+enum policy_status {
+  PENDING
+  ACTIVE
+  EXPIRED
+  CLAIMING
+  CLAIMED
+  CANCELLED
+}
+
+/// 风控事件等级
+enum risk_level {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+/// 风控事件处置状态
+enum risk_event_status {
+  PENDING        // 待人工
+  PROCESSING     // 处理中
+  RESOLVED       // 已处置
+  FALSE_POSITIVE // 误报
+}
+
+/// 投诉优先级
+enum complaint_priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+/// 投诉状态
+enum complaint_status {
+  PENDING
+  PROCESSING
+  RESOLVED
+  REJECTED
+}
+
+/// 举报（飞单）状态
+enum report_status {
+  PENDING        // 待核查
+  SUBSTANTIATED  // 属实
+  UNFOUNDED      // 不属实
+}
+
+/// 举报奖励发放状态
+enum report_reward_status {
+  NONE
+  PENDING
+  PAID
+}
+
+/// 黑名单对象类型
+enum blacklist_target_type {
+  USER
+  COMPANION
+  DEVICE
+}
+
+/// 黑名单作用范围
+enum blacklist_scope {
+  ORDER
+  IM
+  LOGIN
+  PLATFORM
+}
+
+/// 黑名单状态
+enum blacklist_status {
+  ACTIVE
+  LIFTED
+}
+
+/// 通知渠道
+enum notification_channel {
+  SUBSCRIBE_MESSAGE // 微信订阅消息
+  SMS               // 短信
+  IM_SYSTEM         // IM 系统消息
+}
+
+/// 通知发送状态
+enum notification_status {
+  PENDING
+  SENT
+  FAILED
+}
+
+/// 提醒类型（健康/用药仅中性文字提醒，禁医疗断言，见 §13 Q3）
+enum reminder_type {
+  BIRTHDAY
+  HEALTH
+  NEUTRAL
+}
+
+/// 敏感数据分级（架构 §5.3）
+enum access_level {
+  L1 // 公开
+  L2 // 内部
+  L3 // 敏感（加密）
+  L4 // 极敏感（加密 + KMS + 访问审计）
+}
+
+/// 文件类型（COS 对象分类，内容不落库，仅存 objectKey）
+enum file_type {
+  FACE_PHOTO         // 人脸签到照
+  LIVENESS_VIDEO     // 活体视频
+  ID_CARD_FRONT      // 身份证人像面
+  ID_CARD_BACK       // 身份证国徽面
+  CRIMINAL_CERT      // 无犯罪记录证明
+  TRAINING_MATERIAL  // 培训材料
+  SERVICE_LOG        // 服务日志
+  SOS_RECORD         // SOS 记录
+  COMPLAINT_EVIDENCE // 投诉证据
+  REPORT_EVIDENCE    // 举报证据
+  VOICE_NOTE         // 语音留言
+  OTHER
+}
+
+/// 操作者类型（服务动作留痕）
+enum operator_type {
+  USER
+  COMPANION
+  ADMIN
+  SYSTEM
+}
+
+/// 取消发起方
+enum cancel_initiator {
+  USER
+  COMPANION
+  PLATFORM
+  TIMEOUT
+}
+
+/// 后台账号状态
+enum admin_status {
+  ACTIVE
+  FROZEN
+}
+
+// ===========================================================================
+// 域一：账号与画像（users / elder_profiles / family_bindings）
+// ===========================================================================
+
+/// 三端统一账号表：微信 openid/unionid、角色、手机号密文（L3）。
+/// 子女账号（FAMILY）经 family_bindings 关联多个老人；陪聊员账号（COMPANION）
+/// 与 companions 主档 1:1。后台人员不在本表（见 admins）。
+model users {
+  id            BigInt      @id @default(autoincrement())
+  openid        String      @unique @db.VarChar(64)  // 微信 openid（按端区分时存带前缀串）
+  unionid       String?     @db.VarChar(64)          // 微信 unionid（多端归一，可空）
+  phone_cipher  String?     @db.VarChar(512)         // 手机号 AES-256-GCM 密文（L3）
+  phone_hmac    String?     @unique @db.VarChar(64)  // 手机号 HMAC-SHA256 盲索引（唯一，支持密文检索）
+  nickname      String      @db.VarChar(64)          // 昵称（L1，需过微信内容安全）
+  avatar_url    String?     @db.VarChar(512)         // 头像 COS objectKey 或 CDN URL
+  role          user_role
+  /// 系统服务账号标记（主理人裁定 A2，2026-10）
+  /// 用途：role=SYSTEM 的账号用于承载系统自动流程的发起方引用
+  ///（如健康告警 escalate → complaints.complainant_id 必填 FK，无真人发起方）。
+  /// 约束（应用层 + 数据层双保）：
+  ///   · 置 true 时该账号**不可登录**（authMiddleware 拒绝），不得被业务接口选为操作人；
+  ///   · 不得计入任何用户数/陪聊员数/活跃统计口径（查询侧一律带 is_system=false 过滤）；
+  ///   · 每次被引用必须写 audit_logs 留痕（Q11 裁定：可审计谁在何时以系统身份处理了哪条告警）。
+  is_system     Boolean     @default(false)
+  status        user_status @default(ACTIVE)
+  last_login_at DateTime?   @db.DateTime(3)
+  created_at    DateTime    @default(now()) @db.DateTime(3)
+  updated_at    DateTime    @updatedAt @db.DateTime(3)
+  deleted_at    DateTime?   @db.DateTime(3)          // 注销冷静期标记；到期匿名化（资金记录法定保留除外）
+
+  // ---- 关系（双向完整）----
+  companion                companions?
+  elder_profile            elder_profiles?
+  family_bindings_as_family family_bindings[] @relation("FbFamily")
+  family_bindings_as_elder  family_bindings[] @relation("FbElder")
+  orders_as_buyer          orders[]         @relation("OrderBuyer")
+  orders_as_elder          orders[]         @relation("OrderElder")
+  payments                 payments[]
+  verifications            verifications[]
+  im_conversations         im_conversations[]
+  im_messages              im_messages[]
+  privacy_bindings         privacy_bindings[]
+  ai_sessions              ai_sessions[]
+  ai_profile               ai_profiles?
+  reviews_as_reviewer      reviews[]        @relation("ReviewReviewer")
+  reviews_as_reviewee      reviews[]        @relation("ReviewReviewee")
+  complaints               complaints[]
+  gift_cards_as_buyer      gift_cards[]      @relation("GcBuyer")
+  gift_cards_as_recipient  gift_cards[]      @relation("GcRecipient")
+  gift_cards_as_bound_user gift_cards[]      @relation("GcBoundUser")
+  user_coupons             user_coupons[]
+  distributor              distributors?
+  commissions              commissions[]
+  insurance_policies       insurance_policies[]
+  revisit_tasks            revisit_tasks[]
+  reports                  reports[]
+  notification_logs        notification_logs[]
+  reminder_settings        reminder_settings[]
+
+  // ---- 健康活动感知域（PRD: docs/MODULE-ACTIVITY-SENSE.md）----
+  wifi_devices            wifi_devices[]
+  activity_signals        activity_signals[]
+  activity_daily_summary  activity_daily_summary[]
+  health_alerts           health_alerts[]
+  activity_consents       activity_consents[]
+  activity_touchpoints    activity_touchpoints[]
+  activity_subscriptions  activity_subscriptions[]
+
+  @@index([role, status])
+}
+
+/// 社区主数据（老人归属社区的锚点；媒体投放主体：门禁屏/单元门贴纸/团长都挂在社区上）。
+/// 隐私：经纬度是**小区级**公开地理信息（非个人住址），非 L3/L4 敏感数据；
+///   与 companions.anchor_lat/lng 的差别是精度诉求不同——那是个人常驻点（模糊至百米级），
+///   这里是小区中心点（6 位小数 ≈ 11cm，用于 3 公里定向）。
+/// **community_name 唯一**：社区名是看板聚合与媒体投放的主键口径，
+///   不得出现两条同名社区（否则同一小区被拆成两组）——这正是 distributors.community_name
+///   无约束 VarChar 的教训（自由文本必然分裂）。
+model communities {
+  id             BigInt    @id @default(autoincrement())
+  community_code String    @unique @db.VarChar(32) // 社区编码（运营唯一标识，如 GZ_TH_HUAYING）
+  community_name String    @unique @db.VarChar(128) // 社区名称（展示用，权威唯一来源）
+  city           String?   @db.VarChar(32) // 城市（广州单城 MVP 可空）
+  address        String?   @db.VarChar(256) // 详细地址
+  lng            Decimal?  @db.Decimal(10, 6) // 中心点经度（6 位小数 ≈ 11cm）
+  lat            Decimal?  @db.Decimal(10, 6) // 中心点纬度
+  distributor_id BigInt? // 挂靠团长（可空：一个团长可管多个小区）
+  created_at     DateTime  @default(now()) @db.DateTime(3)
+  updated_at     DateTime  @updatedAt @db.DateTime(3)
+
+  distributor   distributors?         @relation(fields: [distributor_id], references: [id])
+  elders        elder_profiles[]
+  touchpoints   activity_touchpoints[]
+  verifications verifications[]
+
+  @@index([distributor_id]) // 团长反查所管社区
+}
+
+/// 老人档案：画像标签（JSON）、健康边界偏好、紧急联系人（L3 加密）。
+/// 老人侧不采人脸底照；健康信息仅「提醒边界」级，不采病历（架构 §10.1）。
+model elder_profiles {
+  id                            BigInt    @id @default(autoincrement())
+  user_id                       BigInt    @unique
+  gender                        String?   @db.VarChar(8)    // male/female/unknown
+  birthday                      DateTime? @db.Date
+  interests                     Json?                       // 兴趣标签数组（脱敏后供匹配）
+  health_boundaries             Json?                       // 健康提醒边界（禁医疗断言）
+  topic_heat                    Json?                       // 话题热度（AI 回写）
+  preferences                   Json?                       // 适老设置：字号/语音/音量
+  emergency_contact_name_cipher String?   @db.VarChar(512)  // 紧急联系人姓名（L3 加密）
+  emergency_contact_phone_cipher String?  @db.VarChar(512)  // 紧急联系人电话（L3 加密）
+  emergency_contact_relation    String?   @db.VarChar(16)
+  /// 归属社区（A7 案 B）——可空：不是所有老人都有社区归属
+  community_id                  BigInt?
+  created_at                    DateTime  @default(now()) @db.DateTime(3)
+  updated_at                    DateTime  @updatedAt @db.DateTime(3)
+  deleted_at                    DateTime? @db.DateTime(3)
+
+  user      users        @relation(fields: [user_id], references: [id])
+  community communities? @relation(fields: [community_id], references: [id])
+
+  @@index([community_id]) // 按社区筛老人（看板切社区 + 派单按社区匹配，高频）
+}
+
+/// 子女-老人绑定：授权查看范围（基础/服务进度/全部）。
+/// active_key 守卫列：ACTIVE 时='A'，其余 NULL，保证同一 pair 仅一条生效。
+model family_bindings {
+  id           BigInt                @id @default(autoincrement())
+  family_user_id BigInt
+  elder_user_id  BigInt
+  relation     String                @db.VarChar(16) // 父子/母子/配偶/其他
+  auth_level   auth_level            @default(BASIC)
+  status       family_binding_status @default(PENDING)
+  active_key   String?               @db.VarChar(8)  // 'A'=生效中；NULL=历史
+  bound_at     DateTime?             @db.DateTime(3)
+  revoked_at   DateTime?             @db.DateTime(3)
+  created_at   DateTime              @default(now()) @db.DateTime(3)
+  updated_at   DateTime              @updatedAt @db.DateTime(3)
+
+  family_user users @relation("FbFamily", fields: [family_user_id], references: [id])
+  elder_user  users @relation("FbElder", fields: [elder_user_id], references: [id])
+
+  // 「谁在看我」：子女可见范围授权挂在本绑定关系上
+  activity_consent_scopes activity_consent_scopes[]
+
+  @@unique([family_user_id, elder_user_id, active_key])
+  @@index([elder_user_id, status])
+}
+
+// ===========================================================================
+// 域二：陪聊员供给（ companions / applications / certifications /
+//       schedules / credit_logs / deposit_transactions / penalty_records ）
+// ===========================================================================
+
+/// 陪聊员主档：实名状态、标签、时薪（分）、服务半径、等级、信用分、保证金余额。
+/// 等级 level 用 Int（1–5，派单权重）；credit_score 满分 100（§8.3）。
+/// deposit_balance_fen 为缓存值，真实流水以 deposit_transactions 为准（可回放）。
+model companions {
+  id                  BigInt            @id @default(autoincrement())
+  user_id             BigInt            @unique
+  real_name_cipher    String            @db.VarChar(512)  // 真实姓名（L3 加密）
+  id_card_cipher      String            @db.VarChar(512)  // 身份证号（L4 加密，KMS）
+  id_card_hmac        String            @unique @db.VarChar(64) // 身份证盲索引（同一身份证仅一账号）
+  status              companion_status  @default(PENDING)
+  level               Int               @default(1)       // 等级 1–5
+  credit_score        Int               @default(100)     // 信用分（<60 限流，<40 冻结，见 §8.3）
+  hourly_rate_fen     BigInt            // 时薪（分/小时）
+  service_radius_m    Int               @default(3000)    // 服务半径（米）
+  anchor_lat          Decimal           @db.Decimal(10, 7) // 常驻锚点纬度（已模糊至百米级）
+  anchor_lng          Decimal           @db.Decimal(10, 7) // 常驻锚点经度（已模糊至百米级）
+  geo_hash            String            @db.VarChar(12)   // 锚点 geohash（派单就近扫描）
+  tags                Json?             // 服务标签（方言/棋牌/散步…）
+  rating_avg          Decimal           @default(0) @db.Decimal(2, 1)
+  rating_count        Int               @default(0)
+  total_orders        Int               @default(0)
+  completed_orders    Int               @default(0)
+  cancelled_orders    Int               @default(0)
+  deposit_balance_fen BigInt            @default(0)       // 保证金余额缓存（分）
+  retired_at          DateTime?         @db.DateTime(3)
+  created_at          DateTime          @default(now()) @db.DateTime(3)
+  updated_at          DateTime          @updatedAt @db.DateTime(3)
+  deleted_at          DateTime?         @db.DateTime(3)
+
+  user               users                  @relation(fields: [user_id], references: [id])
+  applications       companion_applications[]
+  certifications     companion_certifications[]
+  schedules          companion_schedules[]
+  credit_logs        credit_logs[]
+  deposit_transactions deposit_transactions[]
+  penalty_records    penalty_records[]
+  orders             orders[]
+  im_conversations   im_conversations[]
+  privacy_bindings   privacy_bindings[]
+  verifications      verifications[]
+  revisit_tasks      revisit_tasks[]
+  withdrawals        withdrawals[]
+  insurance_policies insurance_policies[]
+
+  // 派单查询：状态 × geohash 就近；状态 × 信用分（限流扫描）；状态 × 等级
+  @@index([status, geo_hash])
+  @@index([status, credit_score])
+  @@index([status, level])
+  @@index([status, hourly_rate_fen])
+}
+
+/// 陪聊员入驻四审流：stage 为 §6.6 状态机当前阶段；每步审核记录内嵌为列组
+/// （审核人/时间/结果/备注），材料文件指向 file_meta。
+/// active_key 守卫列：进行中='A'，终态置 NULL，保证同一陪聊员仅一条在审。
+model companion_applications {
+  id               BigInt           @id @default(autoincrement())
+  application_no   String           @unique @db.VarChar(32)
+  companion_id     BigInt
+  stage            application_stage @default(APPLIED)
+  active_key       String?          @db.VarChar(8)   // 'A'=在审；NULL=已终审
+
+  // ① 实名：OCR 身份证 + 二要素核验
+  realname_status  step_status      @default(PENDING)
+  realname_reviewer_id BigInt?
+  realname_reviewed_at DateTime?    @db.DateTime(3)
+  realname_comment String?          @db.VarChar(512)
+  realname_ocr_biz_id String?       @db.VarChar(64)   // 腾讯云 OCR 业务流水号
+
+  // ② 人脸：慧眼活体 + 底照留存（L4）
+  face_status      step_status      @default(PENDING)
+  face_reviewer_id BigInt?
+  face_reviewed_at DateTime?        @db.DateTime(3)
+  face_comment     String?          @db.VarChar(512)
+  face_verify_id   String?          @db.VarChar(64)   // 慧眼 VerifyId
+  face_score       Int?                                  // 底照比对分（0–100）
+  face_photo_file_id BigInt?                             // 人脸底照 file_meta（COS 私有）
+
+  // ③ 无犯罪记录：人工上传 + 人工审核（无开放 API，§13 Q2）
+  criminal_status  step_status      @default(PENDING)
+  criminal_reviewer_id BigInt?
+  criminal_reviewed_at DateTime?    @db.DateTime(3)
+  criminal_comment String?          @db.VarChar(512)
+  criminal_material_file_id BigInt?                      // 证明材料 file_meta
+
+  // 培训课程（服务边界/适老沟通/安全）
+  training_completed_at DateTime?   @db.DateTime(3)
+  training_course_ids   Json?                            // 已完成课程 ID 列表
+
+  // 认证考试（≥80 分通过）
+  exam_score       Int?
+  exam_attempt_no  Int              @default(0)
+  exam_passed_at   DateTime?        @db.DateTime(3)
+
+  // ④ 保证金缴纳（默认 ¥500=50000 分，system_configs 可配）
+  deposit_tx_id    BigInt?                               // deposit_transactions.id
+  deposit_amount_fen BigInt?
+  deposit_paid_at  DateTime?        @db.DateTime(3)
+
+  submitted_at     DateTime         @default(now()) @db.DateTime(3)
+  decided_at       DateTime?        @db.DateTime(3)
+  decided_by       BigInt?                               // 终审操作人（admin）
+  decided_note     String?          @db.VarChar(512)
+  reject_reason    String?          @db.VarChar(512)
+  created_at       DateTime         @default(now()) @db.DateTime(3)
+  updated_at       DateTime         @updatedAt @db.DateTime(3)
+
+  companion companions @relation(fields: [companion_id], references: [id])
+
+  @@unique([companion_id, active_key])
+  @@index([stage, created_at]) // 审核工作台按阶段扫描
+}
+
+/// 陪聊员培训/考试认证记录
+model companion_certifications {
+  id             BigInt    @id @default(autoincrement())
+  companion_id   BigInt
+  cert_type      String    @db.VarChar(32) // TRAINING_COURSE / EXAM_PASS / RETAKE
+  name           String    @db.VarChar(128)
+  score          Int?
+  passed         Boolean   @default(false)
+  certificate_no String?   @db.VarChar(64)
+  valid_from     DateTime? @db.Date
+  valid_until    DateTime? @db.Date
+  file_id        BigInt?                              // 证照文件 file_meta
+  created_at     DateTime  @default(now()) @db.DateTime(3)
+
+  companion companions @relation(fields: [companion_id], references: [id])
+
+  @@index([companion_id, cert_type])
+}
+
+/// 陪聊员日程/可约时段。date 为空=每周周期性模板（weekday 生效）；
+/// date 非空=指定日期特例（可用或停接）。time 用 "HH:mm" 字符串避免时区换算。
+/// MySQL 唯一索引对 NULL 不互斥：周期模板唯一性由服务层保证（文档 §索引设计）。
+model companion_schedules {
+  id           BigInt          @id @default(autoincrement())
+  companion_id BigInt
+  date         DateTime?       @db.Date        // 空=周期模板
+  weekday      Int?                             // 0=周日 … 6=周六（周期模板必填）
+  start_time   String          @db.VarChar(5)  // "HH:mm"
+  end_time     String          @db.VarChar(5)
+  status       schedule_status @default(AVAILABLE)
+  note         String?         @db.VarChar(256)
+  created_at   DateTime        @default(now()) @db.DateTime(3)
+  updated_at   DateTime        @updatedAt @db.DateTime(3)
+
+  companion companions @relation(fields: [companion_id], references: [id])
+
+  @@index([companion_id, status])
+  @@index([companion_id, weekday])
+}
+
+/// 信用分明细（每日 cron 结算写入，可回放）。规则见 §8.3：
+/// 好评 +1 / 差评 −3 / 取消 −2 / 私聊违规 −5 / 飞单坐实 −20 并清退。
+model credit_logs {
+  id           BigInt          @id @default(autoincrement())
+  companion_id BigInt
+  change_score Int             // 增减分（带符号）
+  type         credit_log_type
+  before_score Int
+  after_score  Int
+  reason       String          @db.VarChar(256)
+  related_order_id BigInt?                          // 关联订单（如有）
+  operator_id  BigInt?                              // 人工调整操作人（admin）
+  created_at   DateTime        @default(now()) @db.DateTime(3)
+
+  companion    companions @relation(fields: [companion_id], references: [id])
+  related_order orders?    @relation("CreditLogOrder", fields: [related_order_id], references: [id])
+
+  @@index([companion_id, created_at])
+}
+
+/// 保证金专户流水（只插入不更新，balance_after_fen 支撑回放与对账）。
+/// 罚扣由 penalty_records 执行时联动写入；退出 30 天无纠纷原路退。
+model deposit_transactions {
+  id               BigInt          @id @default(autoincrement())
+  tx_no            String          @unique @db.VarChar(32)
+  companion_id     BigInt
+  type             deposit_tx_type
+  amount_fen       BigInt          // 发生额（分）
+  balance_after_fen BigInt         // 流水后保证金余额（分）
+  status           tx_status       @default(PENDING)
+  wx_transaction_id String?        @db.VarChar(64) // 微信交易单号（原路退时回填）
+  related_type     String?         @db.VarChar(32) // APPLICATION / PENALTY / WITHDRAWAL / RETIRE
+  related_id       BigInt?
+  idempotency_key  String          @unique @db.VarChar(64)
+  remark           String?         @db.VarChar(256)
+  succeeded_at     DateTime?       @db.DateTime(3)
+  created_at       DateTime        @default(now()) @db.DateTime(3)
+
+  companion companions @relation(fields: [companion_id], references: [id])
+
+  @@index([companion_id, created_at])
+  @@index([status, created_at])
+}
+
+/// 保证金罚扣/处罚记录。执行后联动 deposit_transactions（PENALTY）与
+/// credit_logs（IM_VIOLATION/FLY_ORDER），保证「一切资金动作可审计」。
+model penalty_records {
+  id                BigInt   @id @default(autoincrement())
+  companion_id      BigInt
+  order_id          BigInt?
+  risk_event_id     BigInt?
+  report_id         BigInt?
+  type              String   @db.VarChar(32) // DEPOSIT_PENALTY / CREDIT_PENALTY / SPEED_LIMIT / BAN
+  deposit_deduct_fen BigInt  @default(0)      // 保证金罚扣额（分）
+  credit_deduct     Int      @default(0)      // 信用分罚扣
+  reason            String   @db.VarChar(256)
+  evidence_file_ids Json?                      // 证据 file_meta ID 列表
+  status            String   @default("PENDING") @db.VarChar(16) // PENDING/EXECUTED/REVOKED
+  operator_id       BigInt?                    // 操作人（admin）
+  executed_at       DateTime? @db.DateTime(3)
+  created_at        DateTime @default(now()) @db.DateTime(3)
+
+  companion  companions  @relation(fields: [companion_id], references: [id])
+  order      orders?      @relation(fields: [order_id], references: [id])
+  risk_event risk_events?  @relation(fields: [risk_event_id], references: [id])
+  report     reports?     @relation(fields: [report_id], references: [id])
+
+  @@index([companion_id, created_at])
+  @@index([status, created_at])
+}
+
+// ===========================================================================
+// 域三：订单与交易（ orders / order_timeline / payments /
+//       profit_sharing_records / withdrawals / reconciliation_records ）
+// ===========================================================================
+
+/// 订单主表。状态机见架构 §6.5（12 态）。
+/// 时段防重兜底：唯一索引 (companion_id, service_date, slot_start, slot_guard)。
+///   slot_guard='L' 表示占用中；CANCELLED/REFUNDED 终态置 NULL 释放时段
+///   （MySQL 唯一索引中多个 NULL 互不冲突，实现「仅一条生效」）。
+/// 地址密文 + 模糊坐标：派单/导航时由服务层解密，陪聊员侧仅见模糊点位。
+model orders {
+  id                  BigInt          @id @default(autoincrement())
+  order_no            String          @unique @db.VarChar(32)
+  user_id             BigInt          // 下单账号（老人本人或子女代下）
+  elder_user_id       BigInt          // 服务对象（老人）
+  companion_id        BigInt?         // 接单后回填
+  status              order_status    @default(CREATED)
+  service_type        service_type    @default(CHAT)
+  duration_minutes    Int             // 服务时长（分钟）
+  service_date        DateTime        @db.Date
+  slot_start          DateTime        @db.DateTime(3) // 时段开始（UTC）
+  slot_end            DateTime        @db.DateTime(3) // 时段结束（UTC）
+  slot_guard          String?         @db.VarChar(8)  // 'L'=占用中；NULL=已释放
+
+  hourly_rate_fen     BigInt          // 时薪快照（分）
+  original_amount_fen BigInt          // 原价（分）= 时长 × 时薪
+  coupon_deduct_fen   BigInt          @default(0) // 优惠券抵扣（不参与分成基数）
+  gift_card_deduct_fen BigInt         @default(0) // 时长卡抵扣（不参与分成基数）
+  total_amount_fen    BigInt          // 实收金额（分）
+
+  address_cipher      String          @db.VarChar(1024) // 服务地址（L3 加密）
+  geo_hash            String          @db.VarChar(12)  // 地址 geohash（模糊）
+  elder_lat           Decimal         @db.Decimal(10, 7) // 老人位置（模糊至百米级）
+  elder_lng           Decimal         @db.Decimal(10, 7)
+  distance_m          Int             @default(0)      // 派单匹配距离（米）
+
+  night_order         Boolean         @default(false)  // 22:00–06:00 夜间单（需子女确认）
+  family_confirmer_id BigInt?
+  family_confirmed_at DateTime?       @db.DateTime(3)
+
+  dispatched_at        DateTime?      @db.DateTime(3)
+  dispatch_deadline_at DateTime?      @db.DateTime(3) // 30min 无人接单转人工（§6.1）
+  // ---- 派单加权可解释三件套 + 加成分（主理人裁定③，架构 §13.12②）----
+  // 语义：活动感知只做「同档内加成分」，永远不改变档位归属（档位按 base_score 判定）。
+  // 基础分/加权因子/原因码全部留痕，供客服与陪聊员申诉、风控复核（申诉时必须能还原当时打分依据）。
+  dispatch_base_score    Int      @default(0)     // 基础分（既有五因子归一到 0–100，权重不动）
+  dispatch_activity_bonus Int     @default(0)     // 活动加成分（LOW +5 / STILL +10 / 其余 0；配置驱动，架构 §13.12②）
+  dispatch_reason_code   String?  @db.VarChar(32) // 加权原因码 bonus_reason：ACTIVITY_LOW/ACTIVITY_STILL/NONE
+  accepted_at          DateTime?      @db.DateTime(3)
+  arrived_at           DateTime?      @db.DateTime(3)
+  service_started_at   DateTime?      @db.DateTime(3)
+  service_ended_at     DateTime?      @db.DateTime(3)
+  pending_confirm_at   DateTime?      @db.DateTime(3)
+  completed_at         DateTime?      @db.DateTime(3)
+  suspended_at         DateTime?      @db.DateTime(3)
+  suspend_reason       String?        @db.VarChar(256)
+  cs_decision          String?        @db.VarChar(32) // 客服裁决：COMPLETE/PARTIAL_REFUND/FULL_REFUND
+  cs_operator_id       BigInt?
+  closed_at            DateTime?      @db.DateTime(3)
+
+  cancel_initiator     cancel_initiator?
+  cancel_reason        String?        @db.VarChar(256)
+  cancel_fee_fen       BigInt         @default(0) // 违约金（分）
+  refund_amount_fen    BigInt         @default(0) // 累计退款（分）
+
+  remark               String?        @db.VarChar(512)
+  idempotency_key      String         @unique @db.VarChar(64) // 下单幂等（Idempotency-Key）
+  created_via          String         @default("ELDER_APP") @db.VarChar(16) // ELDER_APP/FAMILY_APP/CS
+  created_by           BigInt?
+  created_at           DateTime       @default(now()) @db.DateTime(3)
+  updated_at           DateTime       @updatedAt @db.DateTime(3)
+
+  user                  users                  @relation("OrderBuyer", fields: [user_id], references: [id])
+  elder_user            users                  @relation("OrderElder", fields: [elder_user_id], references: [id])
+  companion             companions?           @relation(fields: [companion_id], references: [id])
+  timeline              order_timeline[]
+  payments              payments[]
+  profit_sharing_records profit_sharing_records[]
+  verifications         verifications[]
+  im_conversation       im_conversations?
+  privacy_binding       privacy_bindings?
+  reviews               reviews[]
+  insurance_policies    insurance_policies[]
+  user_coupons_used     user_coupons[]           @relation("UsedOrder")
+  commissions           commissions[]
+  revisit_tasks         revisit_tasks[]
+  complaints            complaints[]
+  reports               reports[]
+  credit_logs           credit_logs[]            @relation("CreditLogOrder")
+  penalty_records       penalty_records[]
+  evidence_files        evidence_files[]
+  risk_events           risk_events[]
+
+  // ---- 健康活动感知域（告警关联订单/挂起复用既有链路；订阅表刻意不关联）----
+  health_alerts        health_alerts[]
+  activity_touchpoints activity_touchpoints[]
+
+  @@unique([companion_id, service_date, slot_start, slot_guard]) // 时段防重兜底
+  @@index([user_id, created_at])
+  @@index([elder_user_id, status])
+  @@index([companion_id, status, service_date])
+  @@index([status, dispatch_deadline_at]) // 派单超时扫描
+  @@index([status, created_at])           // 支付超时/待分账超时 cron 扫描
+}
+
+/// 订单状态流水（每次转移一行，只插入不更新，可回放）。
+/// 服务边界确认书存证、取消事由、客服裁决均落此表（架构 §10.3）。
+model order_timeline {
+  id           BigInt        @id @default(autoincrement())
+  order_id     BigInt
+  from_status  order_status?
+  to_status    order_status
+  action       String        @db.VarChar(64) // pay/accept/verify/confirm/suspend/refund/...
+  operator_type operator_type
+  operator_id  BigInt?
+  reason       String?       @db.VarChar(256)
+  extra        Json?         // 存证：服务边界确认书版本、裁决明细等
+  created_at   DateTime      @default(now()) @db.DateTime(3)
+
+  order orders @relation(fields: [order_id], references: [id])
+
+  @@index([order_id, id])
+}
+
+/// 支付单（微信服务商 JSAPI）。款项 100% 进平台担保户（§7.1）。
+/// wx_out_trade_no 为我方传给微信的商户订单号，全局唯一；回调验签 + 幂等。
+model payments {
+  id               BigInt         @id @default(autoincrement())
+  payment_no       String         @unique @db.VarChar(32)
+  order_id         BigInt
+  user_id          BigInt
+  channel          String         @default("WX_JSAPI") @db.VarChar(16)
+  amount_fen       BigInt         // 支付金额（分）
+  status           payment_status @default(PENDING)
+  profit_sharing   Boolean        @default(true) // 是否标记可参与分账
+  wx_out_trade_no  String         @unique @db.VarChar(32) // 商户订单号
+  wx_prepay_id     String?        @db.VarChar(64)
+  wx_transaction_id String?       @db.VarChar(64)         // 微信支付单号（对账关键字）
+  paid_at          DateTime?      @db.DateTime(3)
+  refund_amount_fen BigInt        @default(0)
+  refunded_at      DateTime?      @db.DateTime(3)
+  wx_refund_id     String?        @db.VarChar(64)
+  fail_reason      String?        @db.VarChar(256)
+  idempotency_key  String         @unique @db.VarChar(64)
+  created_at       DateTime       @default(now()) @db.DateTime(3)
+  updated_at       DateTime       @updatedAt @db.DateTime(3)
+
+  order                orders                 @relation(fields: [order_id], references: [id])
+  user                 users                  @relation(fields: [user_id], references: [id])
+  profit_sharing_records profit_sharing_records[]
+
+  @@index([status, created_at])
+  @@index([wx_transaction_id])
+}
+
+/// 分账记录（架构 §7 核心表）。三态：FROZEN → SHARED / RETURNED。
+/// 一笔订单通常一条记录走完全部生命周期；同一订单多次回退时每次回退
+/// 追加一条 RETURNED 记录（与订单 1:N），全部资金动作可回放。
+/// 分账失败不推进状态：retry_count 累加 ≥3 次升级人工工单（manual_ticket_no）。
+/// commission_rate_bp 为冻结时快照（基点，500=5%），配置后续调整不影响历史。
+model profit_sharing_records {
+  id                    BigInt                @id @default(autoincrement())
+  sharing_no            String                @unique @db.VarChar(32)
+  order_id              BigInt
+  payment_id            BigInt
+  status                profit_sharing_status @default(FROZEN)
+  frozen_amount_fen     BigInt                // 冻结金额 = 订单实收（分）
+  platform_commission_fen BigInt              // 平台抽成（分）
+  companion_income_fen  BigInt                // 陪聊员应收（分）= 实收 − 抽成
+  commission_rate_bp    Int                   // 抽成比例快照（基点）
+  wx_transaction_id     String                @db.VarChar(64) // 微信支付单号（分账依据）
+  wx_sharing_order_no   String?               @db.VarChar(64) // 微信分账单号（回单）
+  shared_at             DateTime?             @db.DateTime(3)
+  return_amount_fen     BigInt                @default(0)   // 回退/解冻金额（分）
+  wx_return_no          String?               @db.VarChar(64) // 微信回退单号
+  returned_at           DateTime?             @db.DateTime(3)
+  return_reason         String?               @db.VarChar(256)
+  retry_count           Int                   @default(0)
+  last_error            String?               @db.VarChar(512)
+  manual_ticket_no      String?               @db.VarChar(64) // 人工工单号（重试≥3次升级）
+  idempotency_key       String                @unique @db.VarChar(64)
+  created_at            DateTime              @default(now()) @db.DateTime(3)
+  updated_at            DateTime              @updatedAt @db.DateTime(3)
+
+  order   orders   @relation(fields: [order_id], references: [id])
+  payment payments @relation(fields: [payment_id], references: [id])
+
+  @@index([order_id])
+  @@index([status, created_at]) // 「已超 7 天未分账」告警扫描（§7.2）
+  @@index([wx_transaction_id])
+}
+
+/// 提现单。默认模式（分账直达）下低频；备选「平台收款后结算」模式启用。
+/// 二次验证（人脸/短信）+ T+1 审核（finance 角色）+ 单笔限额（§7.5）。
+model withdrawals {
+  id                  BigInt            @id @default(autoincrement())
+  withdrawal_no       String            @unique @db.VarChar(32)
+  companion_id        BigInt
+  amount_fen          BigInt            // 提现金额（分）
+  fee_fen             BigInt            @default(0) // 手续费（分）
+  actual_amount_fen   BigInt            // 实到（分）= amount − fee
+  bank_account_cipher String            @db.VarChar(512) // 银行卡号（L3 加密）
+  bank_name           String            @db.VarChar(64)
+  account_name_cipher String            @db.VarChar(512) // 开户名（L3 加密）
+  status              withdrawal_status @default(PENDING_REVIEW)
+  face_verified       Boolean           @default(false)
+  sms_verified        Boolean           @default(false)
+  reviewer_id         BigInt?
+  reviewed_at         DateTime?         @db.DateTime(3)
+  reject_reason       String?           @db.VarChar(256)
+  wx_batch_no         String?           @db.VarChar(64) // 微信商户提现批次号
+  wx_transaction_id   String?           @db.VarChar(64)
+  paid_at             DateTime?         @db.DateTime(3)
+  idempotency_key     String            @unique @db.VarChar(64)
+  created_at          DateTime          @default(now()) @db.DateTime(3)
+  updated_at          DateTime          @updatedAt @db.DateTime(3)
+
+  companion companions @relation(fields: [companion_id], references: [id])
+
+  @@index([companion_id, created_at])
+  @@index([status, created_at])
+}
+
+/// 每日对账批次（03:00 cron 拉微信账单逐笔核对，§7.5）。
+/// 差异明细存 diff_detail JSON 并告警；分账失败重试 ≥3 次升级人工工单。
+model reconciliation_records {
+  id                BigInt        @id @default(autoincrement())
+  batch_no          String        @unique @db.VarChar(32)
+  batch_date        DateTime      @db.Date
+  channel           recon_channel
+  local_count       Int           @default(0)
+  local_amount_fen  BigInt        @default(0)
+  wx_count          Int           @default(0)
+  wx_amount_fen     BigInt        @default(0)
+  match_count       Int           @default(0)
+  diff_count        Int           @default(0)
+  diff_amount_fen   BigInt        @default(0)
+  status            recon_status  @default(PENDING)
+  diff_detail       Json?         // 差异明细 [{biz_no, local, wx, reason}]
+  bill_downloaded_at DateTime?    @db.DateTime(3)
+  resolved_by       BigInt?
+  resolved_at       DateTime?     @db.DateTime(3)
+  resolve_note      String?       @db.VarChar(512)
+  created_at        DateTime      @default(now()) @db.DateTime(3)
+
+  @@unique([batch_date, channel])
+  @@index([status, created_at])
+}
+
+// ===========================================================================
+// 域四：核销与留痕（ verifications / file_meta / evidence_files /
+//       revisit_tasks ）+ 通信（ im_conversations / im_messages /
+//       privacy_bindings ）+ AI（ ai_sessions / ai_messages / ai_profiles ）
+// ===========================================================================
+
+/// 核销事实表（架构 §6.2/§5.1）。一条订单可有多条尝试记录：
+/// type=ARRIVAL 到岗核销（动态码 + 人脸活体比对 + GPS 模糊坐标 + 偏差）；
+/// type=COMPLETION 完成确认（双方确认时间戳，老人可语音「满意」ASR 留痕）。
+/// GPS 仅存模糊坐标（百米级）与偏差米数，不暴露门牌（§6.2 3d）。
+model verifications {
+  id                  BigInt             @id @default(autoincrement())
+  order_id            BigInt
+  companion_id        BigInt
+  user_id             BigInt             // 老人侧账号
+  /// 签到发生地所属社区（A7 案 B）——到岗核销按小区出服务量/巡检覆盖率
+  community_id        BigInt?
+  type                verification_type
+  status              verification_status @default(PENDING)
+  attempt_no          Int                @default(1)
+  dynamic_code        String?            @db.VarChar(6)  // 6 位动态码（TTL 见 system_configs）
+  code_mode           code_mode?
+  code_sent_at        DateTime?          @db.DateTime(3)
+  code_expires_at     DateTime?          @db.DateTime(3)
+  code_verified_at    DateTime?          @db.DateTime(3)
+  face_score          Int?               // 人脸比对分（0–100，阈值 face_match_threshold）
+  face_passed         Boolean?
+  liveness_score      Int?               // 活体检测分
+  face_verify_id      String?            @db.VarChar(64) // 慧眼 VerifyId
+  gps_lat             Decimal?           @db.Decimal(10, 7) // 模糊纬度
+  gps_lng             Decimal?           @db.Decimal(10, 7) // 模糊经度
+  gps_deviation_m     Int?               // 与订单地址偏差（米，阈值 gps_max_deviation）
+  arrived_at          DateTime?          @db.DateTime(3)
+  companion_confirmed_at DateTime?       @db.DateTime(3) // 完成确认：陪聊员
+  elder_confirmed_at  DateTime?          @db.DateTime(3) // 完成确认：老人
+  elder_voice_asr     String?            @db.VarChar(256) // 老人语音确认 ASR 文本
+  completion_note     String?            @db.VarChar(256)
+  fail_reason         String?            @db.VarChar(256)
+  created_at          DateTime           @default(now()) @db.DateTime(3)
+  updated_at          DateTime           @updatedAt @db.DateTime(3)
+
+  order     orders      @relation(fields: [order_id], references: [id])
+  companion companions  @relation(fields: [companion_id], references: [id])
+  user      users       @relation(fields: [user_id], references: [id])
+  community communities? @relation(fields: [community_id], references: [id])
+  evidence_files evidence_files[]
+
+  @@unique([order_id, type, attempt_no])
+  @@index([order_id, status])
+  @@index([community_id, created_at]) // 签到按社区聚合（服务量/覆盖率）
+  @@index([companion_id, created_at])
+}
+
+/// COS 文件元数据注册中心（架构 §4.1 file 模块）：STS 直传完成回调登记。
+/// DB 只存 objectKey 不存内容；访问计数/最近访问支撑访问审计，
+/// 每次敏感访问另写 audit_logs。L4 文件（人脸/活体）仅审核岗可见。
+model file_meta {
+  id             BigInt   @id @default(autoincrement())
+  object_key     String   @unique @db.VarChar(512) // COS 对象键
+  bucket         String   @db.VarChar(64)
+  region         String?  @db.VarChar(32)
+  uploader_id    BigInt?  // 上传者（users/admins，多态不建 FK）
+  uploader_role  String?  @db.VarChar(16)
+  biz_type       String?  @db.VarChar(32) // VERIFICATION/APPLICATION/COMPLAINT/...
+  biz_id         BigInt?
+  file_type      file_type
+  access_level   access_level @default(L2)
+  size_bytes     BigInt   @default(0)
+  content_type   String?  @db.VarChar(128)
+  sha256         String?  @db.VarChar(64) // 内容校验，防篡改
+  access_count   Int      @default(0)
+  last_access_at DateTime? @db.DateTime(3)
+  last_accessor_id BigInt?
+  created_at     DateTime @default(now()) @db.DateTime(3)
+
+  evidence_files evidence_files[]
+  im_messages    im_messages[]
+
+  @@index([uploader_id, created_at])
+  @@index([biz_type, biz_id])
+}
+
+/// 业务证据关联：把 file_meta 挂到订单/核销/投诉/举报等业务对象上，
+/// 标注证据类型与敏感级（如人脸签到照=L4）。
+model evidence_files {
+  id             BigInt      @id @default(autoincrement())
+  file_meta_id   BigInt
+  order_id       BigInt?
+  verification_id BigInt?
+  file_type      file_type
+  access_level   access_level @default(L3)
+  remark         String?     @db.VarChar(256)
+  created_at     DateTime    @default(now()) @db.DateTime(3)
+
+  file_meta    file_meta     @relation(fields: [file_meta_id], references: [id])
+  order        orders?       @relation(fields: [order_id], references: [id])
+  verification verifications? @relation(fields: [verification_id], references: [id])
+
+  @@index([order_id])
+  @@index([verification_id])
+  @@index([file_meta_id])
+}
+
+/// 事后回访任务（客服）：服务后回访 / 质量抽查 / SOS 跟进。
+model revisit_tasks {
+  id           BigInt   @id @default(autoincrement())
+  task_no      String   @unique @db.VarChar(32)
+  order_id     BigInt
+  user_id      BigInt
+  companion_id BigInt?
+  type         String   @db.VarChar(32) // POST_SERVICE/QUALITY_CHECK/SOS_FOLLOWUP
+  status       String   @default("PENDING") @db.VarChar(16) // PENDING/DONE/OVERDUE/CANCELLED
+  assignee_id  BigInt?  // 客服
+  planned_at   DateTime @db.DateTime(3)
+  done_at      DateTime? @db.DateTime(3)
+  method       String?  @db.VarChar(16) // PHONE/VISIT/MESSAGE
+  satisfaction Int?     // 回访满意度 1–5
+  result_note  String?  @db.VarChar(512)
+  created_at   DateTime @default(now()) @db.DateTime(3)
+
+  order     orders      @relation(fields: [order_id], references: [id])
+  user      users       @relation(fields: [user_id], references: [id])
+  companion companions? @relation(fields: [companion_id], references: [id])
+
+  @@index([status, planned_at])
+  @@index([order_id])
+}
+
+/// IM 会话（订单维度，禁止脱离订单私聊，§6.4）。与 orders 1:1。
+model im_conversations {
+  id             BigInt   @id @default(autoincrement())
+  order_id       BigInt   @unique
+  user_id        BigInt
+  companion_id   BigInt
+  status         String   @default("ACTIVE") @db.VarChar(16) // ACTIVE/CLOSED
+  user_unread    Int      @default(0)
+  companion_unread Int    @default(0)
+  last_message_at DateTime? @db.DateTime(3)
+  last_message_preview String? @db.VarChar(128)
+  closed_at      DateTime? @db.DateTime(3)
+  created_at     DateTime @default(now()) @db.DateTime(3)
+
+  order     orders      @relation(fields: [order_id], references: [id])
+  user      users       @relation(fields: [user_id], references: [id])
+  companion companions  @relation(fields: [companion_id], references: [id])
+  messages  im_messages[]
+
+  @@index([user_id, last_message_at])
+  @@index([companion_id, last_message_at])
+}
+
+/// IM 消息（全量留痕 + 内容审核）。分页走游标：(conversation_id, id) 降序。
+/// client_msg_id 为端上生成幂等键，防重发。语音消息转写抽检结果存 asr_text。
+model im_messages {
+  id               BigInt           @id @default(autoincrement())
+  conversation_id  BigInt
+  sender_id        BigInt
+  sender_role      im_sender_role
+  msg_type         im_message_type
+  content          String           @db.Text // 文本/系统消息内容；图片语音存 file_meta
+  status           im_message_status @default(NORMAL)
+  review_status    im_review_status @default(PENDING)
+  risk_event_id    BigInt?
+  file_meta_id     BigInt?          // 图片/语音对象
+  voice_duration_ms Int?
+  asr_text         String?          @db.VarChar(1024) // 语音转写（抽检）
+  client_msg_id    String           @db.VarChar(64)   // 端上幂等键
+  read_by_user_at  DateTime?        @db.DateTime(3)
+  read_by_companion_at DateTime?    @db.DateTime(3)
+  created_at       DateTime         @default(now()) @db.DateTime(3)
+
+  conversation im_conversations @relation(fields: [conversation_id], references: [id])
+  sender       users            @relation(fields: [sender_id], references: [id])
+  file_meta    file_meta?       @relation(fields: [file_meta_id], references: [id])
+  risk_events  risk_events[]
+
+  @@unique([conversation_id, client_msg_id]) // 端上重发幂等
+  @@index([conversation_id, id])             // 游标分页（覆盖索引）
+  @@index([conversation_id, created_at])
+  @@index([sender_id, created_at])
+  @@index([review_status, created_at])       // 审核队列扫描
+}
+
+/// 隐私号 AXB 绑定（腾讯云号码隐私保护）。A=老人侧虚拟号暴露给陪聊员，
+/// B=陪聊员侧虚拟号暴露给老人；有效期=服务完成+24h，到期自动解绑（§6.4）。
+/// 通话记录（时间/时长/双方虚拟号）回写 call_records JSON 供风控取证。
+model privacy_bindings {
+  id                     BigInt                @id @default(autoincrement())
+  order_id               BigInt                @unique
+  user_id                BigInt
+  companion_id           BigInt
+  axb_bind_id            String?               @unique @db.VarChar(64) // 腾讯云绑定 ID
+  user_virtual_number    String?               @db.VarChar(32) // A 侧虚拟号
+  companion_virtual_number String?             @db.VarChar(32) // B 侧虚拟号
+  status                 privacy_binding_status @default(ACTIVE)
+  bound_at               DateTime              @default(now()) @db.DateTime(3)
+  expired_at             DateTime?             @db.DateTime(3) // 完成 +24h
+  unbound_at             DateTime?             @db.DateTime(3)
+  call_records           Json?                 // [{time, duration, from, to}]
+  created_at             DateTime              @default(now()) @db.DateTime(3)
+
+  order     orders     @relation(fields: [order_id], references: [id])
+  user      users      @relation(fields: [user_id], references: [id])
+  companion companions @relation(fields: [companion_id], references: [id])
+
+  @@index([status, expired_at]) // 到期解绑 cron 扫描
+}
+
+/// AI 陪聊会话（ASR→LLM→TTS 管道，§6.3）。crisis_flag 命中情绪危机
+/// （自杀/虐待关键词）立即停自由发挥并告警人工（§10.2）。
+model ai_sessions {
+  id              BigInt   @id @default(autoincrement())
+  session_no      String   @unique @db.VarChar(32)
+  user_id         BigInt
+  status          String   @default("ACTIVE") @db.VarChar(16) // ACTIVE/ENDED
+  message_count   Int      @default(0)
+  context_summary String?  @db.VarChar(2048) // 滚动上下文摘要
+  emotion_tags    Json?    // 情感标签序列
+  crisis_flag     Boolean  @default(false)
+  started_at      DateTime @default(now()) @db.DateTime(3)
+  ended_at        DateTime? @db.DateTime(3)
+  last_message_at DateTime? @db.DateTime(3)
+  created_at      DateTime @default(now()) @db.DateTime(3)
+
+  user     users       @relation(fields: [user_id], references: [id])
+  messages ai_messages[]
+
+  @@index([user_id, created_at])
+  @@index([status, last_message_at])
+}
+
+/// AI 会话消息。asr_text=语音转写原文；llm_* 为模型调用元数据（可观测/成本）。
+/// 按 ai_sample_rate 抽检人工复核（sampled=true 进后台工作台）。
+model ai_messages {
+  id               BigInt   @id @default(autoincrement())
+  session_id       BigInt
+  role             String   @db.VarChar(16) // USER/ASSISTANT/SYSTEM
+  content          String   @db.Text
+  audio_object_key String?  @db.VarChar(512) // TTS 音频 COS 对象键
+  audio_duration_ms Int?
+  asr_text         String?  @db.VarChar(2048) // ASR 原文
+  llm_provider     String?  @db.VarChar(32)   // DeepSeek/Qwen/Doubao
+  llm_model        String?  @db.VarChar(64)
+  prompt_tokens    Int?
+  completion_tokens Int?
+  latency_ms       Int?
+  emotion_label    String?  @db.VarChar(32)
+  topic_label      String?  @db.VarChar(32)
+  review_status    im_review_status @default(PENDING)
+  sampled          Boolean  @default(false) // 是否被抽中人工抽检
+  created_at       DateTime @default(now()) @db.DateTime(3)
+
+  session ai_sessions @relation(fields: [session_id], references: [id])
+
+  @@index([session_id, id])
+  @@index([session_id, created_at])
+  @@index([review_status, created_at])
+  @@index([created_at]) // 归档扫描
+}
+
+/// AI 沉淀画像（老人侧）：兴趣向量、情绪趋势、孤独指数、匹配分缓存。
+/// 每周生成「陪伴报告」（子女端经授权可见）；匹配引擎输入（§6.3 ②）。
+model ai_profiles {
+  id                      BigInt   @id @default(autoincrement())
+  user_id                 BigInt   @unique
+  interest_vector         Json?    // 兴趣向量（标签权重）
+  emotion_trend           Json?    // 情绪趋势（按周）
+  topic_heat              Json?    // 话题热度
+  loneliness_index        Int?     // 孤独指数 0–100
+  match_scores            Json?    // 对候选陪聊员的匹配分缓存
+  weekly_report_generated_at DateTime? @db.DateTime(3)
+  updated_at              DateTime @updatedAt @db.DateTime(3)
+  created_at              DateTime @default(now()) @db.DateTime(3)
+
+  user users @relation(fields: [user_id], references: [id])
+}
+
+// ===========================================================================
+// 域五：评价 / 营销 / 保险 / 风控 / 后台
+// ===========================================================================
+
+/// 双向评价（§6.2 6b）。reviewer_role=USER 时 reviewee 为陪聊员账号；
+/// =COMPANION 时 reviewee 为老人账号。评分聚合进 companions（cron/触发式）。
+enum review_role {
+  USER
+  COMPANION
+}
+
+model reviews {
+  id             BigInt        @id @default(autoincrement())
+  order_id       BigInt
+  reviewer_id    BigInt
+  reviewee_id    BigInt
+  reviewer_role  review_role
+  rating         Int           // 1–5 星
+  tags           Json?         // 快捷标签
+  content        String?       @db.VarChar(1024)
+  status         review_status @default(PENDING)
+  is_anonymous   Boolean       @default(false)
+  reply_content  String?       @db.VarChar(512) // 被评价方回复
+  replied_at     DateTime?     @db.DateTime(3)
+  created_at     DateTime      @default(now()) @db.DateTime(3)
+  updated_at     DateTime      @updatedAt @db.DateTime(3)
+
+  order    orders @relation(fields: [order_id], references: [id])
+  reviewer users  @relation("ReviewReviewer", fields: [reviewer_id], references: [id])
+  reviewee users  @relation("ReviewReviewee", fields: [reviewee_id], references: [id])
+
+  @@unique([order_id, reviewer_role]) // 每单每方向一条
+  @@index([reviewee_id, created_at])
+  @@index([status, created_at])
+}
+
+/// 投诉单（服务态度/质量/安全/收费/隐私等），处理流进后台工作台。
+model complaints {
+  id                BigInt            @id @default(autoincrement())
+  complaint_no      String            @unique @db.VarChar(32)
+  complainant_id    BigInt
+  complainant_role  String            @db.VarChar(16) // USER/COMPANION
+  target_type       String            @db.VarChar(16) // USER/COMPANION/ORDER/PLATFORM
+  target_id         String            @db.VarChar(64)
+  order_id          BigInt?
+  type              String            @db.VarChar(32) // SERVICE_QUALITY/SAFETY/ATTITUDE/FEE/PRIVACY/OTHER
+  priority          complaint_priority @default(NORMAL)
+  description       String            @db.VarChar(1024)
+  evidence_file_ids Json?             // 证据 file_meta ID 列表
+  status            complaint_status  @default(PENDING)
+  handler_id        BigInt?
+  handled_at        DateTime?         @db.DateTime(3)
+  result_note       String?           @db.VarChar(512)
+  compensation_amount_fen BigInt      @default(0) // 补偿金额（分）
+  created_at        DateTime          @default(now()) @db.DateTime(3)
+  updated_at        DateTime          @updatedAt @db.DateTime(3)
+
+  complainant users  @relation(fields: [complainant_id], references: [id])
+  order       orders? @relation(fields: [order_id], references: [id])
+
+  // 健康告警处置复用本工单表（PRD：不新建工单表）
+  health_alerts health_alerts[]
+
+  @@index([status, created_at])
+  @@index([complainant_id, created_at])
+}
+
+/// 孝心时长卡（营销）：面额金额 + 时长双余额；核销时抵扣订单（§4.1 marketing）。
+/// recipient_phone_hmac 支持未注册子女先购卡后绑定。
+model gift_cards {
+  id                      BigInt           @id @default(autoincrement())
+  card_no                 String           @unique @db.VarChar(32)
+  buyer_user_id           BigInt
+  recipient_user_id       BigInt?
+  recipient_phone_hmac    String?          @db.VarChar(64) // 受赠人手机盲索引
+  bound_user_id           BigInt?          // 实际绑定使用的老人账号
+  face_amount_fen         BigInt           // 面额（分）
+  duration_minutes        Int              // 面额时长（分钟）
+  balance_amount_fen      BigInt           // 剩余金额（分）
+  balance_duration_minutes Int             // 剩余时长（分钟）
+  status                  gift_card_status @default(ACTIVE)
+  message                 String?          @db.VarChar(256) // 赠言
+  purchased_at            DateTime         @default(now()) @db.DateTime(3)
+  bound_at                DateTime?        @db.DateTime(3)
+  expires_at              DateTime?        @db.DateTime(3)
+  created_at              DateTime         @default(now()) @db.DateTime(3)
+  updated_at              DateTime         @updatedAt @db.DateTime(3)
+
+  buyer_user     users  @relation("GcBuyer", fields: [buyer_user_id], references: [id])
+  recipient_user users? @relation("GcRecipient", fields: [recipient_user_id], references: [id])
+  bound_user     users? @relation("GcBoundUser", fields: [bound_user_id], references: [id])
+
+  @@index([buyer_user_id])
+  @@index([recipient_phone_hmac])
+  @@index([status, expires_at]) // 过期扫描
+}
+
+/// 优惠券模板。value 语义随 type：满减=减免分；时长=抵扣分钟。
+model coupons {
+  id             BigInt     @id @default(autoincrement())
+  coupon_no      String     @unique @db.VarChar(32)
+  name           String     @db.VarChar(128)
+  type           coupon_type
+  value          Int        // 满减：减免分；时长：分钟
+  min_spend_fen  BigInt     @default(0) // 使用门槛（分）
+  valid_days     Int        @default(30) // 领取后有效天数
+  total_count    Int        @default(0) // 发放总量（0=不限）
+  claimed_count  Int        @default(0)
+  used_count     Int        @default(0)
+  status         String     @default("DRAFT") @db.VarChar(16) // DRAFT/ACTIVE/PAUSED/ENDED
+  scope_rules    Json?      // 适用范围规则（服务类型/金额段）
+  start_at       DateTime?  @db.DateTime(3)
+  end_at         DateTime?  @db.DateTime(3)
+  created_by     BigInt?
+  created_at     DateTime   @default(now()) @db.DateTime(3)
+  updated_at     DateTime   @updatedAt @db.DateTime(3)
+
+  user_coupons user_coupons[]
+
+  @@index([status, start_at])
+}
+
+/// 用户券（领取实例）。核销时 used_order_id 回填；订单退款联动作废（§7.4）。
+model user_coupons {
+  id             BigInt            @id @default(autoincrement())
+  user_id        BigInt
+  coupon_id      BigInt
+  /// 领取时从 coupon模板快照的面值。**不是冗余，是资金口径的护栏**：
+  /// 核销走 coupon_deduct_fen，若只存 coupon_id 则需实时 JOIN coupons 读 value，
+  /// 运营改模板面值会让用户**已领取**的券面额同步变化（存量券瞬间变价，资损且用户无感知）。
+  /// null = 历史数据未快照，核销时回退读模板（回退期结束后应回填，不得长期为 null）。
+  /// 单位随 coupon.type 变：FULL_REDUCTION=减免分 / DURATION=抵扣分钟。
+  value_snapshot Int?
+  status         user_coupon_status @default(UNUSED)
+  source         user_coupon_source @default(MANUAL)
+  used_order_id  BigInt?
+  used_at        DateTime?         @db.DateTime(3)
+  expired_at     DateTime?         @db.DateTime(3)
+  received_at    DateTime          @default(now()) @db.DateTime(3)
+  created_at     DateTime          @default(now()) @db.DateTime(3)
+
+  user       users   @relation(fields: [user_id], references: [id])
+  coupon     coupons @relation(fields: [coupon_id], references: [id])
+  used_order orders? @relation("UsedOrder", fields: [used_order_id], references: [id])
+  activity_touchpoints activity_touchpoints[] // 感知引流券归因（获客成本口径）
+
+  @@index([user_id, status])
+  @@index([status, expired_at]) // 过期 cron 扫描
+  @@index([coupon_id])
+  @@index([source, received_at]) // 获客成本券量按来源统计
+}
+
+/// 社区团长（亲邻渠道分销）。invite_code 用于拉新归因；佣金余额三字段
+/// 与 commissions 流水互为校验（缓存 vs 可回放流水）。
+model distributors {
+  id                      BigInt   @id @default(autoincrement())
+  distributor_no          String   @unique @db.VarChar(32)
+  user_id                 BigInt?  @unique // 可选绑定平台账号（一个账号至多一个团长身份）
+  name                    String   @db.VarChar(64)
+  phone_cipher            String   @db.VarChar(512) // 团长电话（L3 加密）
+  phone_hmac              String   @unique @db.VarChar(64)
+  community_name          String   @db.VarChar(128)
+  invite_code             String   @unique @db.VarChar(16)
+  status                  String   @default("ACTIVE") @db.VarChar(16) // ACTIVE/FROZEN
+  total_commission_fen    BigInt   @default(0)
+  settled_commission_fen  BigInt   @default(0)
+  pending_commission_fen  BigInt   @default(0)
+  created_at              DateTime @default(now()) @db.DateTime(3)
+  updated_at              DateTime @updatedAt @db.DateTime(3)
+
+  user        users?       @relation(fields: [user_id], references: [id])
+  commissions commissions[]
+  communities communities[] // 该团长所管的社区（反向关系：community.distributor_id 指向本表）
+}
+
+/// 分销佣金流水。订单退款时联动 CANCELLED（可回放、可对账）。
+model commissions {
+  id                 BigInt           @id @default(autoincrement())
+  commission_no      String           @unique @db.VarChar(32)
+  distributor_id     BigInt
+  order_id           BigInt?
+  related_user_id    BigInt?          // 被邀请下单用户
+  type               commission_type
+  amount_fen         BigInt
+  status             commission_status @default(PENDING)
+  settled_at         DateTime?        @db.DateTime(3)
+  paid_at            DateTime?        @db.DateTime(3)
+  wx_transaction_id  String?          @db.VarChar(64)
+  idempotency_key    String           @unique @db.VarChar(64)
+  created_at         DateTime         @default(now()) @db.DateTime(3)
+
+  distributor  distributors @relation(fields: [distributor_id], references: [id])
+  order        orders?      @relation(fields: [order_id], references: [id])
+  related_user users?       @relation(fields: [related_user_id], references: [id])
+
+  @@index([distributor_id, created_at])
+  @@index([status, created_at])
+}
+
+/// 保单（MVP 半自动登记 + 月结对账，§9）。按单投保，覆盖服务时段双方意外。
+model insurance_policies {
+  id                    BigInt       @id @default(autoincrement())
+  /// **我方保单号**（唯一）。生成：`genBizNo('policy')` = `POL{yyyyMMdd}{10位随机}`，21 字符。
+  /// 🔴 **只装我方单号，永不装渠道单号**。渠道单号见 `channel_policy_no`。
+  policy_no             String       @unique @db.VarChar(64)
+  /// **渠道方保单号**（可空——MVP 渠道未定，mock 下亦为 null 或 MOCKCH 形态）。
+  /// 与 `policy_no` 分列的原因：**字段语义单一**。两者混在一列，
+  /// 数据看着都对，但「按前缀判断单号来源」会全错，且这种 bug 查不出来。
+  channel_policy_no     String?      @db.VarChar(64)
+  /// 保险公司代码（可空）。渠道未定前用「待定渠道（mock）」占位于 `insurer` 文本。
+  insurer_code          String?      @db.VarChar(32)
+  order_id              BigInt?
+  /// ⚠️ `policy_no` 存在**两种历史格式**（2026-10-22 实测）：
+  ///   ① 旧：`POL{13位时间戳}{orderNo后6位}` = 22 字符（adapter 硬编码，已落库）
+  ///   ② 新：`POL{yyyyMMdd}{10位随机}`   = 21 字符（genBizNo）
+  /// **解析时不得依赖格式**，只能按 `policy_no` 精确匹配查库（唯一索引兜底）。
+  /// 见DEPLOYMENT.md 与 adapters/insurance.ts 的 CreatePolicyResult 注释。
+  insured_user_id       BigInt       // 老人（投保人/被保险人）
+  insured_companion_id  BigInt?      // 陪聊员（连带被保险人）
+  insurer               String       @db.VarChar(64) // 保险公司
+  product_name          String       @db.VarChar(128)
+  coverage_amount_fen   BigInt       // 保额（分）
+  premium_fen           BigInt       // 保费（分）
+  start_at              DateTime     @db.DateTime(3)
+  end_at                DateTime     @db.DateTime(3)
+  status                policy_status @default(PENDING)
+  claim_no              String?      @db.VarChar(64)
+  claim_status          String?      @db.VarChar(16)
+  claim_amount_fen      BigInt?
+  claimed_at            DateTime?    @db.DateTime(3)
+  remark                String?      @db.VarChar(256)
+  created_at            DateTime     @default(now()) @db.DateTime(3)
+  updated_at            DateTime     @updatedAt @db.DateTime(3)
+
+  order             orders?      @relation(fields: [order_id], references: [id])
+  insured_user      users        @relation(fields: [insured_user_id], references: [id])
+  insured_companion companions?  @relation(fields: [insured_companion_id], references: [id])
+
+  @@index([order_id])
+  @@index([status, end_at]) // 到期提醒扫描
+  @@index([channel_policy_no]) // 渠道回调按渠道单号反查（接入渠道后必需）
+}
+
+/// 风控事件（§8.2/§10.4）。subject_type+subject_id 多态指向（不建 FK）。
+/// SOS、GPS 偏差、异常取消率、私聊敏感模式命中均落此表，进人工工作台。
+model risk_events {
+  id            BigInt           @id @default(autoincrement())
+  event_no      String           @unique @db.VarChar(32)
+  type          String           @db.VarChar(48) // SENSITIVE_WORD/GPS_DEVIATION/CANCEL_RATE/OFFLINE_SUSPECT/SOS/OUTBOUND_CIPHER_LEAK/...
+  level         risk_level       @default(LOW)
+  subject_type  String           @db.VarChar(16) // USER/COMPANION/ORDER/IM_MESSAGE/DEVICE
+  subject_id    String           @db.VarChar(64)
+  order_id      BigInt?
+  im_message_id BigInt?
+  rule_code     String           @db.VarChar(64) // 命中规则编码（风控规则库 risk-rules.md）
+  hit_detail    Json?            // 命中明细（脱敏）
+  status        risk_event_status @default(PENDING)
+  action_taken  String?          @db.VarChar(64) // WARN/INTERCEPT/LIMIT/PENALTY/BAN
+  handler_id    BigInt?
+  handled_at    DateTime?        @db.DateTime(3)
+  handle_note   String?          @db.VarChar(512)
+  created_at    DateTime         @default(now()) @db.DateTime(3)
+  updated_at    DateTime         @updatedAt @db.DateTime(3)
+
+  order           orders?        @relation(fields: [order_id], references: [id])
+  im_message      im_messages?   @relation(fields: [im_message_id], references: [id])
+  penalty_records penalty_records[]
+
+  @@index([status, level, created_at]) // 工作台队列
+  @@index([subject_type, subject_id])
+  @@index([order_id])
+}
+
+/// 飞单举报（§8 机制 5/6）：私下报价更低、交换联系方式等。
+/// 属实 → 举报奖励（report_reward，分）+ 被举报方罚扣保证金（penalty_records）。
+/// target_type+target_id 多态（USER/COMPANION），不建 FK。
+model reports {
+  id                  BigInt   @id @default(autoincrement())
+  report_no           String   @unique @db.VarChar(32)
+  reporter_id         BigInt
+  reporter_role       String   @db.VarChar(16) // USER/COMPANION
+  target_type         String   @db.VarChar(16) // COMPANION/USER
+  target_id           String   @db.VarChar(64)
+  order_id            BigInt?
+  type                String   @db.VarChar(32) // FLY_ORDER/OFF_PLATFORM_PAY/OTHER（事实源 = risk.routes.ts 的 zod；勿用 schema 注释当枚举来源）
+  description         String   @db.VarChar(1024)
+  evidence_file_ids   Json?    // 证据 file_meta ID 列表
+  status              report_status @default(PENDING)
+  reward_status       report_reward_status @default(NONE)
+  reward_amount_fen   BigInt   @default(0) // 奖励金额（分，= system_configs.report_reward）
+  reward_user_coupon_id BigInt? // 以券形式发放时回填
+  handler_id          BigInt?
+  handled_at          DateTime? @db.DateTime(3)
+  handle_note         String?  @db.VarChar(512)
+  created_at          DateTime @default(now()) @db.DateTime(3)
+  updated_at          DateTime @updatedAt @db.DateTime(3)
+
+  reporter        users           @relation(fields: [reporter_id], references: [id])
+  order           orders?         @relation(fields: [order_id], references: [id])
+  penalty_records penalty_records[]
+
+  @@index([status, created_at])
+  @@index([reporter_id, created_at])
+}
+
+/// 黑名单（用户/陪聊员/设备三维，§10.4）。
+/// active_key 守卫列：ACTIVE='A'、LIFTED=NULL，保证同对象同 scope 仅一条生效。
+model blacklists {
+  id                BigInt               @id @default(autoincrement())
+  target_type       blacklist_target_type
+  target_id         String               @db.VarChar(64) // user_id / companion_id / 设备指纹
+  device_fingerprint String?             @db.VarChar(128)
+  reason            String               @db.VarChar(256)
+  scope             blacklist_scope
+  status            blacklist_status     @default(ACTIVE)
+  active_key        String?              @db.VarChar(8) // 'A'=生效中；NULL=已解除
+  created_by        BigInt?
+  expires_at        DateTime?            @db.DateTime(3)
+  lifted_at         DateTime?            @db.DateTime(3)
+  lift_reason       String?              @db.VarChar(256)
+  created_at        DateTime             @default(now()) @db.DateTime(3)
+
+  @@unique([target_type, target_id, scope, active_key])
+  @@index([device_fingerprint])
+}
+
+/// 后台操作审计（RBAC 到按钮级 + 敏感访问全记录，§10.1）。只插入不更新。
+model audit_logs {
+  id           BigInt   @id @default(autoincrement())
+  admin_id     BigInt?
+  action       String   @db.VarChar(64) // create/update/approve/reject/export/view_l4/...
+  module       String   @db.VarChar(32) // 模块名（§4.1）
+  target_type  String?  @db.VarChar(32)
+  target_id    String?  @db.VarChar(64)
+  request_id   String?  @db.VarChar(64) // 与 pino 日志串联
+  ip           String?  @db.VarChar(64)
+  user_agent   String?  @db.VarChar(256)
+  before_json  Json?    // 变更前快照
+  after_json   Json?    // 变更后快照
+  created_at   DateTime @default(now()) @db.DateTime(3)
+
+  admin admins? @relation(fields: [admin_id], references: [id])
+
+  @@index([admin_id, created_at])
+  @@index([module, created_at])
+  @@index([target_type, target_id])
+}
+
+// ---------------------------------------------------------------------------
+// 后台 RBAC（admins / roles / permissions / role_permissions）
+// ---------------------------------------------------------------------------
+
+/// 后台账号（运营/客服/财务/超管）。敏感操作（财务/超管）二次 TOTP（附录 B）。
+/// MVP 采用「一个 admin 一个角色」；后续可平滑扩展 admin_roles 关联表。
+model admins {
+  id                 BigInt      @id @default(autoincrement())
+  username           String      @unique @db.VarChar(64)
+  password_hash      String      @db.VarChar(256) // bcrypt
+  real_name          String      @db.VarChar(64)
+  phone_cipher       String?     @db.VarChar(512) // 后台联系电话（L3）
+  role_id            BigInt
+  totp_secret_cipher String?     @db.VarChar(512) // TOTP 密钥（L4 加密，仅敏感角色启用）
+  status             admin_status @default(ACTIVE)
+  last_login_at      DateTime?   @db.DateTime(3)
+  login_fail_count   Int         @default(0)
+  created_at         DateTime    @default(now()) @db.DateTime(3)
+  updated_at         DateTime    @updatedAt @db.DateTime(3)
+
+  role       roles       @relation(fields: [role_id], references: [id])
+  audit_logs audit_logs[]
+
+  @@index([role_id])
+}
+
+/// 角色：admin（超管）/ ops（运营）/ finance（财务）/ cs（客服），对齐 §4.1。
+model roles {
+  id          BigInt   @id @default(autoincrement())
+  role_key    String   @unique @db.VarChar(32)
+  name        String   @db.VarChar(64)
+  description String?  @db.VarChar(256)
+  is_system   Boolean  @default(false)
+  created_at  DateTime @default(now()) @db.DateTime(3)
+
+  admins           admins[]
+  role_permissions role_permissions[]
+}
+
+/// 权限点（按钮级，如 order:refund:approve / config:commission:edit）。
+model permissions {
+  id          BigInt   @id @default(autoincrement())
+  perm_key    String   @unique @db.VarChar(64)
+  module      String   @db.VarChar(32)
+  name        String   @db.VarChar(64)
+  description String?  @db.VarChar(256)
+
+  role_permissions role_permissions[]
+}
+
+/// 角色-权限关联（M2M）。
+model role_permissions {
+  role_id       BigInt
+  permission_id BigInt
+
+  role       roles       @relation(fields: [role_id], references: [id])
+  permission permissions @relation(fields: [permission_id], references: [id])
+
+  @@id([role_id, permission_id])
+}
+
+// ---------------------------------------------------------------------------
+// 系统配置 / 通知 / 提醒
+// ---------------------------------------------------------------------------
+
+/// 系统配置中心（附录 C 10 项 + §8.3 信用阈值 2 项 + §7.6 分账模式开关 1 项 +
+/// sweep/SOS 批次 3 项 + 域六健康活动感知 6 项，共 22 项种子，见 DATABASE.md §8；
+/// 支持后台热更新 + Redis cache:config）。
+/// value_type: STRING/INT/BOOL/DECIMAL；金额类配置一律以「分」存字符串。
+model system_configs {
+  config_key   String   @id @db.VarChar(64)
+  config_value String   @db.VarChar(256)
+  value_type   String   @db.VarChar(16) // STRING/INT/BOOL/DECIMAL
+  description  String?  @db.VarChar(256)
+  updated_by   BigInt?
+  updated_at   DateTime @updatedAt @db.DateTime(3)
+  created_at   DateTime @default(now()) @db.DateTime(3)
+}
+
+/// 通知发送记录（订阅消息/短信/IM 系统消息）。量大 → 归档策略（见文档 §大表）。
+model notification_logs {
+  id               BigInt             @id @default(autoincrement())
+  channel          notification_channel
+  template_id      String?            @db.VarChar(64) // 微信订阅消息模板 ID
+  target_user_id   BigInt
+  target_phone_cipher String?         @db.VarChar(512) // 短信渠道电话（L3）
+  title            String?            @db.VarChar(128)
+  content          String             @db.VarChar(1024)
+  biz_type         String?            @db.VarChar(32) // ORDER/PAYMENT/VERIFICATION/REMINDER/...
+  biz_id           String?            @db.VarChar(64)
+  status           notification_status @default(PENDING)
+  error            String?            @db.VarChar(256)
+  retry_count      Int                @default(0)
+  sent_at          DateTime?          @db.DateTime(3)
+  read_at          DateTime?          @db.DateTime(3)
+  created_at       DateTime           @default(now()) @db.DateTime(3)
+
+  target_user users @relation(fields: [target_user_id], references: [id])
+
+  @@index([target_user_id, created_at])
+  @@index([status, created_at]) // 失败重试扫描
+  @@index([biz_type, biz_id])
+}
+
+/// 老人提醒设置（生日/健康/中性提醒）。用药仅文字提醒，禁医疗断言（§13 Q3）。
+model reminder_settings {
+  id               BigInt       @id @default(autoincrement())
+  user_id          BigInt
+  reminder_type    reminder_type
+  channel          notification_channel @default(SUBSCRIBE_MESSAGE)
+  time_of_day      String       @db.VarChar(5) // "HH:mm"（UTC，展示层转 +8）
+  enabled          Boolean      @default(true)
+  content_template String?      @db.VarChar(512)
+  last_sent_at     DateTime?    @db.DateTime(3)
+  next_send_at     DateTime?    @db.DateTime(3)
+  created_at       DateTime     @default(now()) @db.DateTime(3)
+  updated_at       DateTime     @updatedAt @db.DateTime(3)
+
+  user users @relation(fields: [user_id], references: [id])
+
+  @@unique([user_id, reminder_type, time_of_day])
+  @@index([enabled, next_send_at]) // 提醒 cron 扫描
+}
+
+// ===========================================================================
+// 域六：健康活动感知（Wi-Fi 无感感知 + 引流增长）
+// 准绳：docs/MODULE-ACTIVITY-SENSE.md（主理人产出，库表以本节为准）
+//
+// 隐私红线在库表的落点（PRD §6，逐条对应字段注释）：
+//   红线② SSID/BSSID/MAC 一律不落原文 → 只存 *_hmac（HMAC-SHA256 盲索引）
+//   红线③ 通道 B 原始波形/CSI 不落库   → activity_signals 只落 features 特征向量
+//   红线⑤ 健康推断仅趋势参考           → is_reference_only=true 强制标注
+//   红线⑥ 原始特征 ≤14 天              → activity_signals.retained_until + 清理索引
+//   红线⑦ 一键关闭即停采并删未聚合数据 → activity_consents.revoked/collect_stopped/unaggregated_purged
+//   红线④ 双层知情同意                → activity_consents（老人）+ activity_consent_scopes（子女可见范围）
+// 本模块全部字段最高敏感级为 L3（健康相关推断 + 家庭网络标识），无 L4：
+//   人脸/身份证等 L4 数据不参与本模块；网络标识与健康推断均已去标识化。
+// ===========================================================================
+
+/// 数据来源通道（PRD §3 双通道）
+enum activity_channel {
+  CHANNEL_A_APP     // 通道A：APP 侧 Wi-Fi 状态心跳（零硬件，W-MVP 必做）
+  CHANNEL_B_GATEWAY // 通道B：Wi-Fi 网关特征（硬件，W+1；原始波形/CSI 不落库）
+}
+
+/// 活动状态五级分级（PRD §3，必须带置信度与数据新鲜度，禁止「假装确定」）
+enum activity_status {
+  ACTIVE  // 活跃
+  LOW     // 低活跃
+  STILL   // 久静
+  AWAY    // 外出或离线
+  UNKNOWN // 数据不足
+}
+
+enum wifi_device_type {
+  APP_PROBE // 老人端 App 探针
+  GATEWAY   // Wi-Fi 网关
+}
+
+enum wifi_device_status {
+  PENDING  // 待绑定/待首次心跳
+  ONLINE
+  OFFLINE
+  UNBOUND  // 已解绑
+  REVOKED  // 老人撤销授权（红线⑦）
+}
+
+/// 感知授权状态（红线④：老人本人授权）
+enum activity_consent_status {
+  PENDING // 待老人确认
+  GRANTED
+  REVOKED // 老人一键关闭：立即停采 + 删除未聚合数据
+  EXPIRED // 授权到期（策略版本或期限）
+}
+
+/// 子女可见范围（老人可逐人调整；红线①：默认不做实时轨迹回放）
+enum activity_consent_scope_level {
+  NONE          // 不可见
+  DAILY_SUMMARY // 仅活动日报
+  ALERT_ONLY    // 仅告警
+  TREND         // 日/周趋势 + 告警（子女看板默认档）
+}
+
+/// 撤销后未聚合数据清理确认态（主理人裁定④ / PRD 红线⑦）
+enum activity_purge_status {
+  NOT_STARTED // 未开始清理
+  RUNNING     // 清理中（sweep 执行中）
+  CONFIRMED   // 清理完成且已确认（unaggregated_purged_at 有值）
+  FAILED      // 清理失败（purge_error 有值，待重试）
+}
+
+enum health_alert_type {
+  STILL_TOO_LONG      // 久静超阈
+  FALL_SUSPECT        // 跌倒疑似（通道B，W+1）
+  DEVICE_OFFLINE      // 设备离线超阈
+  NOCTURNAL_ACTIVITY  // 夜间异常活跃
+  LOW_TREND           // 活跃下降趋势（引流触发器①）
+  RESPIRATORY_TREND   // 无创呼吸趋势（W+2，参考指标）
+}
+
+/// 告警分级（PRD §8：告警疲劳缓释——分级 + 人工确认后升级 + 抑制窗口）
+enum health_alert_level {
+  REMIND // 提醒
+  WARN   // 预警
+  URGENT // 紧急（客服外呼 → 紧急联系人/社区）
+}
+
+/// 告警状态（§13.5 / §13.12④：health_alerts 自身状态流自闭环，默认不落 complaints）
+/// 六态 = 架构五态的细化：架构 ACK↔ACKNOWLEDGED、CONFIRMED↔RESOLVED，
+/// 额外增设 PROCESSING（处置中，介于受理与结案之间，供客服工作台显示处置进度）。
+/// 与 API-CONTRACT.md §13.5「与 health_alert_status 逐字一致」及 shared/enums.ts 严格一致。
+enum health_alert_status {
+  OPEN         // 待处置
+  ACKNOWLEDGED // 已受理（ack_by 记受理人）
+  PROCESSING   // 处置中
+  RESOLVED     // 已确认并结案（处置结论落 conclusion）
+  DISMISSED    // 误报
+  ESCALATED    // 升级（人工确认后升级为紧急处置）
+}
+
+/// 引流漏斗事件（PRD §4：装机→激活→数据可用→告警→首单→复购）
+enum activity_touchpoint_type {
+  INSTALL
+  ACTIVATION
+  CONSENT_GRANTED
+  DATA_AVAILABLE
+  ALERT_RAISED
+  FIRST_ORDER
+  REORDER
+}
+
+/// 触达渠道（**触点如何触达**，与 `activity_touchpoint_type` 的「漏斗走到哪一步」正交）。
+///
+/// 关键区分：`source_channel`（activity_channel：CHANNEL_A_APP / CHANNEL_B_GATEWAY）是
+/// **采集通道**（数据从哪条通道上来），`touch_channel` 是**触达渠道**（我们从哪触到用户）
+/// —— 两者语义完全不同，不可复用同一列。
+///
+/// 七值覆盖 Tom 的核心获客场景：亲邻社区媒体（门禁广告屏 / 单元门贴纸 / 团长地推 /
+/// 开门 App 跳转）是线下信任锚与流量入口，媒体触点必须能被单独聚合出 ROI，
+/// 否则「哪个小区门禁屏带来的首单最多」这个运营最需要的问题答不了。
+enum activity_touch_channel {
+  PUSH         // 微信订阅消息推送
+  SMS          // 短信
+  IM           // 站内 IM
+  MEDIA_SCREEN // 亲邻社区媒体：门禁广告屏
+  MEDIA_STICKER // 亲邻社区媒体：单元门贴纸
+  DISTRIBUTOR  // 社区团长地推
+  OPENING_APP  // 亲邻开门 App 跳转小程序
+}
+
+enum activity_subscription_tier {
+  FREE
+  PRO
+  INSTITUTIONAL
+}
+
+enum activity_subscription_status {
+  PENDING
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  SUSPENDED
+}
+
+/// Wi-Fi 感知设备（App 探针 / 网关）：与老人账号绑定、心跳在线状态、采集总开关。
+/// 隐私：MAC/SSID/BSSID 一律只存 HMAC 哈希，原文永不落库（PRD 红线②）。
+model wifi_devices {
+  id              BigInt             @id @default(autoincrement())
+  device_no       String             @unique @db.VarChar(32)
+  elder_user_id   BigInt// 绑定老人（数据主体）
+  device_type     wifi_device_type
+  status          wifi_device_status @default(PENDING)
+  active_key      String?            @db.VarChar(8)  // 守卫列：'A'=当前生效；NULL=已解绑/被替换
+  vendor          String?            @db.VarChar(64)
+  model           String?            @db.VarChar(64)
+  device_mac_hmac String?            @db.VarChar(64) // MAC HMAC（L3）
+  ssid_hmac       String?            @db.VarChar(64) // SSID HMAC（L3）
+  bssid_hmac      String?            @db.VarChar(64) // BSSID HMAC（L3）——仅识别「是否同一个家」，禁反查
+  device_token_hash String?          @db.VarChar(64) // 探针心跳令牌哈希（只存哈希，明文不落库；架构 A5）
+  token_issued_at DateTime?          @db.DateTime(3) // 令牌签发时点
+  token_expires_at DateTime?         @db.DateTime(3) // 令牌过期时点（到期须轮换）
+  collect_enabled Boolean            @default(true) // 采集总开关（老人一键关闭 → false）
+  disabled_at     DateTime?          @db.DateTime(3)
+  last_heartbeat_at DateTime?        @db.DateTime(3)
+  heartbeat_interval_sec Int          @default(60)
+  /// 采集窗口粒度（分钟）——**设备级固化，绑定时定档**，非端上自由传。
+  /// 为什么必须固化：`activity_signals.window_start` 的对齐网格由window_minutes 决定
+  /// （ingest.sanitize.ts 的 alignWindowStart 向下取整到 window_minutes 整数倍边界）。
+  /// 若同一设备能上报不同 window_minutes（5 分钟网格 vs 小时网格），同一物理时刻会被
+  /// 切成两个窗口 → 幂等唯一键只防「完全相同」，防不了「不同坐标系下的同一时刻」
+  /// → 日聚合被重复计数污染。故 ingest 以本列为准，端上传参仅作参考。
+  window_minutes Int                @default(5)
+  bound_at        DateTime?          @db.DateTime(3)
+  created_at      DateTime           @default(now()) @db.DateTime(3)
+  updated_at      DateTime           @updatedAt @db.DateTime(3)
+
+  elder_user   users           @relation(fields: [elder_user_id], references: [id])
+  signals      activity_signals[]
+  health_alerts health_alerts[]
+
+  @@unique([elder_user_id, device_type, active_key]) // 同老人同类型设备仅一条生效（守卫列模式，§2.8）
+  @@index([elder_user_id, status])
+  @@index([status, last_heartbeat_at]) // 设备离线扫描（DEVICE_OFFLINE 告警源）
+  @@index([bssid_hmac])// 同家识别（不用于反查）
+  @@index([token_expires_at])// 令牌轮换扫描
+}
+
+/// 统一活动信号（双通道归一，PRD §3）：时间窗 + 特征 + 置信度 + 数据新鲜度。
+/// 红线③：通道B 的原始波形/CSI 只在网关本地处理，此处仅 features 特征向量与事件标记；
+/// 红线⑥：retained_until = window_end + activity_signal_retention_days（硬上限 14 天），
+///         服务端 sweep 按该索引清理，purged_at 留清理痕迹（可审计）。
+model activity_signals {
+  id             BigInt           @id @default(autoincrement())
+  elder_user_id  BigInt
+  device_id      BigInt?
+  channel        activity_channel
+  window_start   DateTime         @db.DateTime(3) // 采集时间窗起（UTC）
+  window_end     DateTime         @db.DateTime(3) // 采集时间窗止（UTC）
+  window_minutes Int              @default(5) // 采集窗口粒度（分钟）——**由 wifi_devices.window_minutes（设备级固化）决定**，非端上自由传
+  features       Json// 特征向量/事件（禁存原始波形/CSI）
+  feature_schema_version Int       @default(1)
+  event_flag     String?          @db.VarChar(32)   // 事件标记（网络切换/跌倒疑似等）
+  confidence     Int              @default(0)        // 置信度 0–100
+  data_freshness_seconds Int      @default(0)        // 数据新鲜度（上报时延，秒）
+  ssid_hmac      String?          @db.VarChar(64)    // SSID HMAC
+  bssid_hmac     String?          @db.VarChar(64)    // BSSID HMAC
+  retained_until DateTime         @db.DateTime(3)    // 原始特征清理时点（红线⑥）
+  purged_at      DateTime?        @db.DateTime(3)    // 已被清理时留痕
+  created_at     DateTime         @default(now()) @db.DateTime(3)
+
+  elder_user users         @relation(fields: [elder_user_id], references: [id])
+  device     wifi_devices? @relation(fields: [device_id], references: [id])
+
+  @@index([elder_user_id, window_start]) // 日聚合扫描
+  @@index([retained_until])// 留存清理 sweep（≤14 天红线）
+  // 幂等兜底（主理人裁定，2026-10）：同设备同窗口只留一条。
+  // 注意：唯一键用 window_start（毫秒精度）会过严——同一 5 分钟窗口若因上报抖动落在不同毫秒，
+  // 会被当作两个窗口各插一条，污染日聚合。故写入前须把 window_start 向下对齐到
+  // wifi_devices.window_minutes（设备级固化的窗口粒度）的整数倍边界
+  //（见 ingest.sanitize.ts 的 alignWindowStart），同一窗口必然对齐到同一时刻，唯一键才成立。
+  //
+  // 索引说明：唯一索引本身即可服务「按设备查窗口」这一查询形状，故**不再**并列
+  // @@index([device_id, window_start])——两索引列完全相同，纯冗余（写放大 + 存储双倍）。
+  @@unique([device_id, window_start])
+}
+
+/// 老人日聚合（PRD §3 统一模型第二层）：活跃时段分布、活动量、久静次数、居家时长、状态分级。
+/// is_reference_only=true：健康推断仅趋势参考，接口文案不得写成诊断结论（红线⑤）。
+/// channel_mask：参与聚合的通道位图（1=A，2=B）——单通道不得直接下「不健康」结论（PRD §8 双通道交叉验证）。
+model activity_daily_summary {
+  id            BigInt          @id @default(autoincrement())
+  elder_user_id BigInt
+  summary_date  DateTime        @db.Date
+  status        activity_status @default(UNKNOWN) // 当日主导状态（五级）
+  status_confidence Int         @default(0)       // 状态置信度 0–100
+  data_freshness_minutes Int    @default(0)       // 数据新鲜度（分钟）
+  active_slots  Json?// 24 段活跃分布 [{hour, level}]（聚合，非实时轨迹）
+  activity_score Int            @default(0)       // 活动量指数
+  still_count   Int             @default(0)       // 久静次数
+  away_count    Int             @default(0)       // 外出/离线次数
+  home_dwell_minutes Int        @default(0)       // 居家时长（分钟）
+  signal_count  Int             @default(0)
+  device_count  Int             @default(0)
+  channel_mask  Int             @default(0)       // 通道位图：1=A 2=B（双通道交叉验证证据）
+  is_reference_only Boolean     @default(true)    // 参考指标，非医疗诊断（红线⑤）
+  computed_at   DateTime?       @db.DateTime(3)
+  created_at    DateTime        @default(now()) @db.DateTime(3)
+  updated_at    DateTime        @updatedAt @db.DateTime(3)
+
+  elder_user   users          @relation(fields: [elder_user_id], references: [id])
+  health_alerts health_alerts[]
+
+  @@unique([elder_user_id, summary_date])
+  @@index([summary_date, status])       // 看板与漏斗扫描
+}
+
+/// 健康告警（PRD §3 第三层 + §8 告警分级/抑制窗口/人工确认后升级）。
+/// 处置复用 complaints 工单（不新建工单表）；订单挂起复用 suspendOrderForSafety 既有链路。
+/// is_reference_only=true：告警结论为参考推断，人工确认前不得作为医疗判断（红线⑤）。
+model health_alerts {
+  id             BigInt              @id @default(autoincrement())
+  alert_no       String              @unique @db.VarChar(32)
+  elder_user_id  BigInt
+  device_id      BigInt?
+  summary_id     BigInt?
+  type           health_alert_type
+  level          health_alert_level  @default(REMIND)
+  status         health_alert_status @default(OPEN)
+  confidence     Int                 @default(0) // 置信度 0–100
+  is_reference_only Boolean          @default(true) // 参考指标，非诊断（红线⑤）
+  source_channel activity_channel?
+  triggered_by_rule String           @db.VarChar(64) // 命中规则编码（explain_code 语义：规则原因码）
+  triggered_at   DateTime            @db.DateTime(3)
+  suppressed_until DateTime?         @db.DateTime(3) // 抑制窗口（防告警疲劳）
+  escalated_at   DateTime?           @db.DateTime(3) // 升级时点
+  ack_by         BigInt?// 受理人（users 或 admins 域，跨域故不建 FK）
+  ack_by_role    String?  @db.VarChar(16) // 受理人域：USER（子女/老人）/ADMIN（客服工作台）/SYSTEM
+  ack_at         DateTime?           @db.DateTime(3) // 受理时点
+  handled_by     BigInt?// 处置人（admins，RBAC）
+  handled_at     DateTime?           @db.DateTime(3)
+  conclusion     String?             @db.VarChar(512) // 处置结论
+  complaint_id   BigInt?// 复用 complaints 工单
+  order_id       BigInt?// 关联订单（派单/挂起走既有链路）
+  created_at     DateTime            @default(now()) @db.DateTime(3)
+  updated_at     DateTime            @updatedAt @db.DateTime(3)
+
+  elder_user users                   @relation(fields: [elder_user_id], references: [id])
+  device     wifi_devices?           @relation(fields: [device_id], references: [id])
+  summary    activity_daily_summary? @relation(fields: [summary_id], references: [id])
+  complaint  complaints?             @relation(fields: [complaint_id], references: [id])
+  order      orders?                 @relation(fields: [order_id], references: [id])
+  touchpoints activity_touchpoints[]
+
+  @@index([elder_user_id, triggered_at])
+  @@index([status, level, triggered_at]) // 看板与处置队列
+  @@index([type, suppressed_until])      // 抑制窗口判定
+  @@index([complaint_id])
+}
+
+/// 感知授权主表（红线④双层知情同意的第一层：老人本人授权，一人一条）。
+/// REVOKED = 老人一键关闭：立即停止采集（collect_stopped_at + 设备 collect_enabled=false）
+/// 并删除未聚合数据（unaggregated_purged_at，红线⑦）；日聚合与告警按策略保留以供回溯。
+/// **清理确认态（主理人裁定④）**：purge_status 表达「已撤销且未聚合数据已删除」的确认闭环——
+///   NOT_STARTED（未开始）→ RUNNING（清理中）→ CONFIRMED（清理完成，unaggregated_purged_at 有值）
+///   / FAILED（清理失败，purge_error 留原因，sweep 可重试）。
+/// 未撤销行 = 「谁在看我」生效态；撤销行 + purge_status=CONFIRMED = 用户可向客服确认「已删干净」。
+model activity_consents {
+  id             BigInt                  @id @default(autoincrement())
+  elder_user_id  BigInt                  @unique // 老人本人（默认同意方）
+  status         activity_consent_status @default(PENDING)
+  policy_version String                  @db.VarChar(16) // 同意文本版本（可审计）
+  granted_at     DateTime?               @db.DateTime(3)
+  revoked_at     DateTime?               @db.DateTime(3) // 老人撤销时间
+  collect_stopped_at DateTime?           @db.DateTime(3) // 采集停止生效时间
+  device_stop_requested_at DateTime?     @db.DateTime(3) // 已下发设备停采
+  unaggregated_purged_at DateTime?       @db.DateTime(3) // 未聚合原始数据清除完成（红线⑦）
+  purge_status   activity_purge_status   @default(NOT_STARTED) // 清理确认态（裁定④）
+  purge_error    String?                 @db.VarChar(256) // 清理失败原因（可重试）
+  created_at     DateTime                @default(now()) @db.DateTime(3)
+  updated_at     DateTime                @updatedAt @db.DateTime(3)
+
+  elder_user users                  @relation(fields: [elder_user_id], references: [id])
+  scopes     activity_consent_scopes[]
+
+  @@index([status, revoked_at])
+  @@index([purge_status]) // 清理 sweep 扫描（未完成的撤销行）
+}
+
+/// 子女可见范围（红线④第二层 + 老人可查「谁在看我」）：
+/// 每行 = 一个家庭绑定关系的可见档位；「谁在看我」= 本表 revoked_at IS NULL 的行。
+/// 挂 family_binding_id 而非裸 user_id：绑定解除即失效，避免越权可见。
+model activity_consent_scopes {
+  id                BigInt                      @id @default(autoincrement())
+  consent_id        BigInt
+  family_binding_id BigInt// 子女-老人绑定关系
+  viewer_level      activity_consent_scope_level @default(TREND)
+  granted_at        DateTime?                   @db.DateTime(3)
+  revoked_at        DateTime?                   @db.DateTime(3)
+  created_at        DateTime                    @default(now()) @db.DateTime(3)
+  updated_at        DateTime                    @updatedAt @db.DateTime(3)
+
+  consent        activity_consents @relation(fields: [consent_id], references: [id])
+  family_binding family_bindings   @relation(fields: [family_binding_id], references: [id])
+
+  @@unique([consent_id, family_binding_id])
+  @@index([family_binding_id, revoked_at])
+}
+
+/// 引流漏斗事件（PRD §4）：装机→激活→数据可用→告警→首单→复购。
+/// order_id 仅用于归因（首单/复购指向陪聊订单），本表不产生任何资金流水。
+/// **获客成本科目（主理人裁定②）**：新装引流券（activity_lead_incentive_newinstall=2000 分）
+/// 性质是**获客成本**而非补贴——用 incentive_* 三列表达「券额度 + 会计科目 + 发放单号」，
+/// 与陪聊分账池（profit_sharing_records）、补贴池在科目层面彻底隔离，**不混进 profit_sharing_records**。
+model activity_touchpoints {
+  id             BigInt                  @id @default(autoincrement())
+  elder_user_id  BigInt?                 // 触达主体（老人）
+  /// 触达发生地所属社区（A7 案 B）——媒体触点（门禁屏/单元门贴纸/团长地推）
+  /// 必须独立成列：媒体投放 ROI 要按小区出数，不能绕订单反查。
+  /// 语义为**事件发生地**，写入时取老人档案当前归属社区（服务层保证），非独立口径。
+  community_id   BigInt?
+  event_type     activity_touchpoint_type
+  funnel_stage   String                  @db.VarChar(32) // 漏斗阶段（冗余，便于聚合）
+  source_channel activity_channel?       // **采集通道**（数据从哪条通道上来：CHANNEL_A_APP/CHANNEL_B_GATEWAY）
+  /// **触达渠道**（我们从哪触到用户）——与 source_channel（采集通道）语义不同，不可复用同一列。
+  /// 媒体类触点（门禁屏/单元门贴纸/团长地推/开门 App）是 Tom 的核心获客场景，
+  /// 必须能单独聚合出 ROI，故落独立列 + 独立索引（不能塞 metadata JSON：无法建索引，聚合会退化成全表扫 JSON）。
+  touch_channel  activity_touch_channel?
+  alert_id       BigInt?                 // 归因告警
+  order_id       BigInt?                 // 归因订单（首单/复购）
+  /// 是否已转化——**语义定死：该触点最终归因到了一笔订单**（首单或复购，经 order_id 判定），
+  /// 不是「被点开了」这类中间态。漏斗末端闭环靠它（触点 → 订单 → 获客成本 → ROI）。
+  converted      Boolean                 @default(false)
+  converted_at   DateTime?               @db.DateTime(3) // 转化时点
+  touchpoint_at  DateTime                @db.DateTime(3)
+  metadata       Json?                   // 归因上下文（文案位/具体素材等）
+  // ---- 获客成本科目（与分账池隔离）----
+  incentive_id         BigInt?  // 发放的优惠券/权益 ID（user_coupons.id）
+  incentive_amount_fen BigInt   @default(0) // 券面额（分）—— 计入获客成本，不进分账池
+  cost_account        String?  @db.VarChar(32) // 会计科目：ACQUISITION_LEAD_INCENTIVE（获客成本）
+  created_at     DateTime                @default(now()) @db.DateTime(3)
+
+  elder_user users?         @relation(fields: [elder_user_id], references: [id])
+  community  communities?   @relation(fields: [community_id], references: [id])
+  alert      health_alerts? @relation(fields: [alert_id], references: [id])
+  order      orders?        @relation(fields: [order_id], references: [id])
+  incentive  user_coupons?  @relation(fields: [incentive_id], references: [id])
+
+  @@index([elder_user_id, touchpoint_at])
+  @@index([community_id, touchpoint_at]) // 漏斗按社区聚合（媒体触点投放 ROI 出数）
+  @@index([event_type, touchpoint_at]) // 漏斗聚合
+  @@index([touch_channel, touchpoint_at]) // 触达渠道 ROI 聚合（媒体触点单独出数）
+  @@index([cost_account, touchpoint_at]) // 获客成本科目统计（单均带新成本）
+}
+
+/// 感知订阅（PRD §5：免费/高级 ¥49 月/机构定制）。
+/// **账务隔离硬要求**：本表与 orders / payments / profit_sharing_records / commissions
+/// 刻意不建任何关系——订阅收入走 revenue_account 独立科目，不进陪聊分账池（PRD §5）。
+/// 金额一律 BigInt 存分（PRO 月费 4900 = ¥49）。真实收款流水待 W+2 支付能力接入。
+/// **能力位（主理人裁定① / Q9）**：tier 决定默认能力集，capabilities 落「实际生效能力位快照」
+/// （允许机构层定制、试用、补偿等覆盖）。安全兜底（safety_fallback：久静/离线的客服人工处置与外呼）
+/// 属**免费层能力、不设付费墙**——付费门闩只作用于主动预警与分析类能力（架构 §13.12①）。
+model activity_subscriptions {
+  id              BigInt                       @id @default(autoincrement())
+  subscription_no String                       @unique @db.VarChar(32)
+  elder_user_id   BigInt// 订阅主体（老人）；机构层以 institutional_name 标注
+  tier            activity_subscription_tier  @default(FREE)
+  status          activity_subscription_status @default(PENDING)
+  price_fen       BigInt                       @default(0) // 订阅价（分）PRO 月费=4900
+  billing_cycle   String                       @default("MONTHLY") @db.VarChar(16) // MONTHLY/YEARLY/CUSTOM
+  institutional_name String?                  @db.VarChar(128) // 机构层主体（街道/养老机构/保险）
+  capabilities    Json?// 生效能力位快照（见 DATABASE.md §6.5 能力位表）
+  start_at        DateTime                     @db.DateTime(3)
+  end_at          DateTime                     @db.DateTime(3)
+  auto_renew      Boolean                      @default(true)
+  cancelled_at    DateTime?                    @db.DateTime(3)
+  revenue_account String                       @default("SUBSCRIPTION_REVENUE") @db.VarChar(32) // 科目隔离（PRD §5）
+  external_ref    String?                      @db.VarChar(64) // 外部支付/机构合同号（W+2 起）
+  created_at      DateTime                     @default(now()) @db.DateTime(3)
+  updated_at      DateTime                     @updatedAt @db.DateTime(3)
+
+  elder_user users @relation(fields: [elder_user_id], references: [id])
+
+  @@index([elder_user_id, status])
+  @@index([status, end_at]) // 到期扫描
+  @@index([tier, status])   // 订阅收入分档统计（独立口径）
+}
