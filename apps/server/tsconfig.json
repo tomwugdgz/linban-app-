@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "strict": true,
+    "types": ["node"],
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "declaration": false,
+    "sourceMap": true,
+    "outDir": "dist",
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "baseUrl": ".",
+    "paths": {
+      "@linban/shared": ["../../packages/shared/src/index.ts"],
+      "@linban/shared/*": ["../../packages/shared/src/*"],
+      "@/*": ["src/*"]
+    }
+  },
+  // scripts 下只有 .ts 会被纳入（.mjs 不开 allowJs，天然排除）。
+  // 为什么要把 scripts/*.ts 纳入类型检查：这些脚本是**门禁基础设施**
+  // （verify-doc-configs.ts 六段文档脱节门禁 / check-migration-drift.mjs 迁移漂移门禁 /
+  //  check-test-collection.ts 测试收集完整性门禁），但它们承载的断言会决定 CI 红绿。
+  // 若不被检查，一次重构就能悄悄把门禁改坏而没人发现——
+  // 这与「断言没牙齿」是同一类问题，只是发生在断言自己身上。
+  // **本条是顾图南 GATE-AUDIT-R2.md 线索 1 报出的缺口**
+  // （admin-web 当时已修、server 未修），主理人 2026-10 列为第 7 项待办。
+  // ⚠️ scripts/probes/ 下的探针也在本范围内 —— 它们是一次性诊断工具，
+  //    但**类型错误同样会让整个 typecheck 门禁红**，故一并纳入（段 6.8 另行断言
+  //    「探针不得被任何 npm script 引用」，两者是不同维度的约束）。
+  "include": ["src", "prisma", "scripts/**/*.ts", "vitest.config.ts"],
+  "exclude": ["node_modules", "dist"]
+}

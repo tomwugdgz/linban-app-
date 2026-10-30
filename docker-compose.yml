@@ -1,0 +1,136 @@
+# ============================================================================
+# 邻伴 · 本地/预发编排（docker-compose.yml）
+# ----------------------------------------------------------------------------
+# 用途：**开发与预发验证**，不是生产编排。
+#
+# 为什么先写这个而不是直接上生产编排：
+#   本项目的最大风险不在「跑不起来」，而在「跑起来但行为与生产不一致」。
+#   下面三条是这个文件必须解决的核心问题：
+#
+#   ① **时区**：DATABASE.md §2.6 铁律 —— MySQL 容器 time_zone='+00:00'，
+#      DATABASE_URL 必须带 timezone=UTC。不带则 Prisma 按本地时区解释 Date，
+#      跨时区订单时段错位。**这是最容易在上线后才暴露的 bug。**
+#
+#   ② **字符集**：utf8mb4（否则 emoji 昵称/聊天内容会截断或报错）
+#
+#   ③ **迁移顺序**：必须等 MySQL healthy → 跑 migrate deploy → 才起应用。
+#      顺序错了应用会在旧 schema 上跑，表现为「接口 500 但日志看不出原因」。
+#
+# 【生产部署不走本文件】生产用云 MySQL / 云 Redis + 容器编排，
+# 迁移由发布流水线单独一步执行（见 docs/DEPLOY.md）。
+# ============================================================================
+
+services:
+  mysql:
+    image: mysql:8.0.36
+    container_name: linban-mysql
+    restart: unless-stopped
+    command:
+      # --default-time-zone 必须显式给：MySQL 容器默认 SYSTEM 时区 = UTC，
+      # 但宿主机/编排器时区会变，显式钉死避免「今天好好的明天订单时段错 8 小时」
+      - --default-time-zone=+00:00
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # 订单/分账/流水表是「只插入不更新」的账务表，禁掉隐式转换
+      - --sql-mode=STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-linban_root_dev}
+      MYSQL_DATABASE: ${DB_NAME:-linban}
+      MYSQL_USER: ${DB_USER:-linban}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-linban_dev}
+      # 初始化时区（与 --default-time-zone 呼应）
+      TZ: UTC
+    ports:
+      - '${DB_PORT:-3306}:3306'
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      # 必须用 mysqladmin ping 而不是「端口能连」——
+      # 端口可连时 mysqld 还在初始化，schema 尚未就绪，迁移会撞上
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-u', 'root', '-p${DB_ROOT_PASSWORD:-linban_root_dev}']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: linban-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    # noeviction 而非 allkeys-lru：
+    # BullMQ 队列与待分账冻结资金状态都在 Redis 里，LRU 淘汰会静默丢任务/丢状态。
+    # 内存不足时宁可写入失败报错，也不能悄悄丢。
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ---- 迁移一次性容器 --------------------------------------------------
+  # 为什么不直接在应用启动时跑迁移：
+  #   多副本滚动更新时，N 个副本会并发跑 migrate deploy → 竞争同一把迁移锁，
+  #   轻则报错重则把迁移表写坏。迁移必须是**发布流程里的独立一步**。
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: linban-migrate
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql://${DB_USER:-linban}:${DB_PASSWORD:-linban_dev}@mysql:3306/${DB_NAME:-linban}?timezone=UTC&charset=utf8mb4
+      NODE_ENV: production
+    command: >
+      sh -c "npx prisma migrate deploy &&
+             npx prisma migrate status &&
+             echo '--- 迁移后校验：存量券快照必须回填完毕 ---' &&
+             npx tsx scripts/check-coupon-backfill.ts"
+    restart: 'no'
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: linban-server
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # 关键：等迁移跑完再起应用。compose 的 depends_on 不传递「完成」，
+      # 只传递「启动」，所以这里用 service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      DATABASE_URL: mysql://${DB_USER:-linban}:${DB_PASSWORD:-linban_dev}@mysql:3306/${DB_NAME:-linban}?timezone=UTC&charset=utf8mb4
+      REDIS_URL: redis://redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CRON_ENABLED: ${CRON_ENABLED:-true}
+      # 密钥从环境注入，**不写进镜像**（.dockerignore 排除 .env）
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?必填，见 .env.example A 档}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?必填}
+      CRYPTO_MASTER_KEY: ${CRYPTO_MASTER_KEY:?必填}
+      CRYPTO_HMAC_KEY: ${CRYPTO_HMAC_KEY:?必填}
+    ports:
+      - '${SERVER_PORT:-3000}:3000'
+    healthcheck:
+      # /healthz 内部同时探 DB + Redis，任一不通返回 503。
+      # 用它而不是「端口能连」——端口通不代表数据库通。
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  mysql-data:
+  redis-data:
