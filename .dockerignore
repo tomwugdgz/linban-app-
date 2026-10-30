@@ -1,0 +1,59 @@
+# ============================================================================
+# .dockerignore —— 构建上下文排除清单
+# ----------------------------------------------------------------------------
+# 关键：**必须排除 .env* 与所有密钥文件**。
+#   Dockerfile 里密钥是构建时注入的（compose 的 environment 段），
+#   镜像里不应该有任何 .env 文件。哪怕 .env 已被 .gitignore 排除，
+#   `docker build` 的上下文仍会包含它 —— **.gitignore 管不到 docker build**。
+# ============================================================================
+
+# 密钥与本地配置（最重要）
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets/
+
+# 依赖与构建产物（镜像内会重新装/重新编）
+node_modules
+**/node_modules
+dist
+build
+out
+**/dist
+**/build
+**/out
+.turbo
+.vite
+
+# 版本控制与编辑器
+.git
+.gitignore
+.github
+.vscode
+.idea
+*.swp
+
+# 本地临时目录（含 .tmp 下的测试基线、探针产物）
+.tmp
+**/.tmp
+coverage
+**/coverage
+
+# 日志与缓存
+*.log
+npm-debug.log*
+yarn-error.log*
+.cache
+**/.cache
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 文档（镜像里不需要，减小上下文）
+docs
+*.md
+!README.md

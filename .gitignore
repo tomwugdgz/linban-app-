@@ -1,0 +1,79 @@
+# ============================================================================
+# 邻伴 monorepo .gitignore（根级，2026-10）
+# ----------------------------------------------------------------------------
+# 为什么必须**硬性排除 .env**：.env.example 里列了 JWT_ACCESS_SECRET /
+# WX_MINIAPPSECRET / WXPAY_APIV3_KEY / TENCENTCLOUD_SECRET_ID / COS_SECRET_KEY /
+# LLM_API_KEY —— 这些是**生产凭据**。一旦 .env 进版本库，密钥轮换之前都算泄漏，
+# 且 git 历史无法真正删除（要rewrite 历史 + 吊销所有相关凭据）。
+#
+# 约定：**只提交 .env.example，不提交任何 .env**。
+# ============================================================================
+
+# ---- 依赖 ----
+node_modules/
+.pnpm-store/
+.yarn/cache/
+.yarn/pnp.*
+
+# ---- 构建产物 ----
+dist/
+build/
+out/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# ---- 环境变量（凭据硬性排除）----
+# 规则：排除所有 .env*，但**放行两类**——
+#   1. *.example（模板，入库）
+#   2. apps/miniapp-*/.env.development 与 .env.production
+#      这两个是 **Taro 编译期必需**（DefinePlugin 注入 process.env），
+#      且经核查只含 APP 名 / 域名 / mock 开关，**无任何凭据**；
+#      排除它们会导致小程序构建直接失败。
+#      一旦将来往里加了真凭据（如小程序 AppSecret），必须改回排除。
+.env
+.env.*
+!.env.example
+!.env.*.example
+!apps/miniapp-*/.env.development
+!apps/miniapp-*/.env.production
+
+# ---- 日志与临时文件 ----
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.pid
+*.seed
+
+# ---- 测试与覆盖率 ----
+coverage/
+.nyc_output/
+.vitest/
+
+# ---- 编辑器 / 操作系统 ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# ---- 本地工具产物 ----
+.workbuddy/
+.tmp/
+*.tsbuildinfo
+.eslintcache
+.cache/
+
+# ---- Prisma 本地产物 ----
+# 注意：**prisma/migrations/ 必须入库**（迁移链是上线阻塞项，见 team-lead 2026-10 裁定）。
+# 这里只排除本地实验性的迁移产物与本地库文件。
+apps/server/prisma/*.db
+apps/server/prisma/*.db-journal
+apps/server/prisma/local-migrations/
+# SWC build cache (regenerates on build, platform-specific native binaries)
+.swc/
