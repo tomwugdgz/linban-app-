@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>邻伴 · 第二轮「假绿缝隙」复核报告</title>
+<style>
+:root{
+  --bg:#0f1115;--panel:#171a21;--panel2:#1e222b;--line:#2b303b;
+  --tx:#e6e8ee;--tx2:#a8b0c0;--tx3:#6f7889;
+  --red:#e5534b;--amber:#d9a021;--green:#3fb950;--blue:#4a9eff;--purple:#a371f7;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--tx);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  line-height:1.75;padding:0 0 80px;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+header{
+  border-bottom:1px solid var(--line);padding:52px 0 32px;margin-bottom:40px;
+  background:linear-gradient(180deg,rgba(74,158,255,.07),transparent);
+}
+h1{font-size:30px;font-weight:650;letter-spacing:-.3px;margin-bottom:14px}
+.meta{color:var(--tx2);font-size:14px;line-height:2}
+.meta b{color:var(--tx);font-weight:600}
+.tag{
+  display:inline-block;padding:2px 9px;border-radius:4px;font-size:12px;
+  font-weight:600;margin-right:6px;letter-spacing:.3px;
+}
+.tag.red{background:rgba(229,83,75,.16);color:var(--red)}
+.tag.amber{background:rgba(217,160,33,.16);color:var(--amber)}
+.tag.green{background:rgba(63,185,80,.16);color:var(--green)}
+.tag.blue{background:rgba(74,158,255,.16);color:var(--blue)}
+h2{
+  font-size:21px;font-weight:640;margin:52px 0 18px;padding-bottom:10px;
+  border-bottom:1px solid var(--line);letter-spacing:-.2px;
+}
+h2 .num{color:var(--tx3);font-weight:400;margin-right:10px;font-size:18px}
+h3{font-size:16px;font-weight:620;margin:28px 0 12px;color:var(--tx)}
+p{margin:12px 0;color:var(--tx2)}
+p strong{color:var(--tx)}
+code{
+  background:var(--panel2);padding:1.5px 6px;border-radius:4px;
+  font-family:"SF Mono",Menlo,Consolas,monospace;font-size:13px;color:#9ecbff;
+}
+pre{
+  background:#0b0d11;border:1px solid var(--line);border-radius:8px;
+  padding:16px 18px;overflow-x:auto;margin:16px 0;
+}
+pre code{background:none;padding:0;color:#c9d1d9;font-size:12.5px;line-height:1.65}
+table{
+  width:100%;border-collapse:collapse;margin:18px 0;font-size:13.5px;
+  background:var(--panel);border-radius:8px;overflow:hidden;
+}
+th{
+  background:var(--panel2);color:var(--tx);text-align:left;
+  padding:11px 13px;font-weight:620;font-size:13px;border-bottom:1px solid var(--line);
+}
+td{padding:11px 13px;border-bottom:1px solid rgba(43,48,59,.6);color:var(--tx2);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:rgba(255,255,255,.02)}
+.sev{
+  display:inline-block;padding:2px 8px;border-radius:4px;font-size:11.5px;
+  font-weight:700;letter-spacing:.4px;white-space:nowrap;
+}
+.sev.s1{background:rgba(229,83,75,.18);color:var(--red)}
+.sev.s2{background:rgba(217,160,33,.18);color:var(--amber)}
+.sev.s3{background:rgba(74,158,255,.18);color:var(--blue)}
+.verdict{font-weight:650;white-space:nowrap}
+.v-exist{color:var(--red)}
+.v-part{color:var(--amber)}
+.v-no{color:var(--green)}
+.card{
+  background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--red);
+  border-radius:8px;padding:20px 22px;margin:18px 0;
+}
+.card.amber{border-left-color:var(--amber)}
+.card.blue{border-left-color:var(--blue)}
+.card h4{margin:0 0 10px;font-size:15.5px;font-weight:640;color:var(--tx)}
+.kv{margin:8px 0;font-size:13.5px;color:var(--tx2)}
+.kv b{color:var(--tx);display:inline-block;min-width:88px;font-weight:600}
+.callout{
+  background:rgba(229,83,75,.07);border:1px solid rgba(229,83,75,.25);
+  border-radius:8px;padding:16px 20px;margin:20px 0;
+}
+.callout.green{background:rgba(63,185,80,.06);border-color:rgba(63,185,80,.22)}
+.callout.amber{background:rgba(217,160,33,.06);border-color:rgba(217,160,33,.22)}
+.callout h4{margin:0 0 8px;font-size:15px;color:var(--tx)}
+ul.check{list-style:none;margin:14px 0}
+ul.check li{
+  padding:8px 0 8px 28px;border-bottom:1px solid rgba(43,48,59,.45);
+  font-size:13.5px;color:var(--tx2);position:relative;
+}
+ul.check li:last-child{border-bottom:none}
+ul.check li::before{content:"☐";position:absolute;left:0;color:var(--tx3);font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:22px 0}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px;text-align:center}
+.stat .n{font-size:27px;font-weight:680;line-height:1.2;letter-spacing:-.5px}
+.stat .l{font-size:12px;color:var(--tx3);margin-top:6px}
+footer{
+  margin-top:64px;padding-top:24px;border-top:1px solid var(--line);
+  color:var(--tx3);font-size:12.5px;text-align:center;
+}
+a{color:var(--blue);text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<h1>邻伴 · 第二轮「假绿缝隙」复核报告</h1>
+<div class="meta">
+  <b>类型</b>　门禁有效性审计（Gate Effectiveness Audit）｜　<b>执行</b>　顾图南（Silas Frame）｜　2026-10<br>
+  <b>目标</b>　不是「文档对不对」，而是「<b>哪些保证看起来存在、实际不生效</b>」<br>
+  <b>方法论约束</b>　<b>不采信任何自述</b>（含主理人、含开发者、含我自己上一轮的结论）。所有判定均以磁盘原文 + 实跑数据为准，命令与行号可复现。<br>
+  <b>产出性质</b>　只读审计，<b>未修改任何代码</b>。<b>已自曝 4 个假阳性</b>（P4 撤销 / catch 措辞 / 券 resume 路径 / P13 误判）。
+</div>
+<div class="grid">
+  <div class="stat"><div class="n" style="color:var(--red)">13</div><div class="l">发现问题（严重 4 / 中等 6 / 轻微 3）</div></div>
+  <div class="stat"><div class="n" style="color:var(--amber)">3</div><div class="l">第三轮新增文档</div></div>
+  <div class="stat"><div class="n" style="color:var(--green)">10</div><div class="l">复核通过（线索 10 逐条）</div></div>
+  <div class="stat"><div class="n" style="color:var(--blue)">3</div><div class="l">丢文件/崩溃机制</div></div>
+  <div class="stat"><div class="n" style="color:var(--tx3)">4</div><div class="l">自曝假阳性</div></div>
+</div>
+</header>
+<h1>邻伴 · 第二轮「假绿缝隙」复核报告</h1>
+<blockquote><p><strong>类型</strong>：门禁有效性审计（Gate Effectiveness Audit）</p>
+<p><strong>执行</strong>：顾图南（Silas Frame）｜ 2026-10</p>
+<p><strong>目标</strong>：不是「文档对不对」，而是「<strong>哪些保证看起来存在、实际不生效</strong>」</p>
+<p><strong>方法论约束</strong>：<strong>不采信任何自述</strong>（含主理人、含开发者、含我自己上一轮的结论）。所有判定均以磁盘原文 + 实跑数据为准，命令与行号可复现。</p>
+<p><strong>产出性质</strong>：只读审计，<strong>未修改任何代码</strong>。</p></blockquote>
+<hr>
+<h2>📌 第五轮增补（2026-10-22）</h2>
+<p>本轮我做了三件事：① 定稿 P1 收集断言规格（12 节）② 改契约 4 项 ③ 核主理人信中每一条描述与磁盘的差异。</p>
+<h3>5R.1 🔴 本轮最重要的一条：<strong>主理人信里的三条描述与磁盘不符，其中一条照办会造成反向破坏</strong></h3>
+<p>主理人信中写：</p>
+<blockquote><p>「前端 <code>activity.ts:49</code> 传 <code>status/community/staleOnly/keyword</code>」</p>
+<p>「服务端 zod 是 <code>status/stale/days/page/pageSize</code>」</p>
+<p>「承钧 = 服务端 zod 改 <code>stale</code>→<code>staleOnly</code>」</p></blockquote>
+<p><strong>我核了磁盘，前端已经改过来了</strong>（mtime 06:52，晚于服务端 06:45）：</p>
+<table>
+<thead><tr><th>位置</th><th>实际参数名</th><th>mtime</th></tr></thead>
+<tbody>
+<tr><td>前端 <code>apps/admin-web/src/api/activity.ts:59</code></td><td><code>status</code> / <strong><code>stale</code></strong> / <code>days</code> / <code>page</code> / <code>pageSize</code></td><td>06:52</td></tr>
+<tr><td>mock <code>apps/admin-web/src/api/mock/server.ts:1288</code></td><td><code>q(query, 'stale')</code></td><td>06:49</td></tr>
+<tr><td>服务端 <code>activity.routes.ts:335-345</code></td><td><code>status</code> / <strong><code>stale</code></strong> / <code>days</code> / <code>page</code> / <code>pageSize</code></td><td>06:45</td></tr>
+</tbody></table>
+<p>前端 <code>activity.ts:52</code> 注释原文：「本轮就踩过：<code>staleOnly</code> 是前端自造名，服务端收的是 <code>stale</code>，恒不命中。」 <code>HealthBoardPage.tsx:70</code> 同样写明「（2026-10 修）」。</p>
+<p><strong>更硬的佐证</strong>：<code>npm run smoke --workspace @linban/admin-web</code> 实测 <strong>211 passed / 0 failed</strong>， 其中一条守卫就是「<strong>前端不再传 <code>staleOnly</code></strong>（服务端收的是 <code>stale</code>，同一概念两个名字 = 永不命中）」。</p>
+<blockquote><p><strong>⚠️ 若照主理人的派单把服务端改成 <code>staleOnly</code>：前端传的 <code>stale</code> 会被 zod <code>.strip()</code> 静默丢弃 → <code>q.stale === undefined</code> → 「信号过期」筛选重新失效，且请求 200、无任何报错。</strong></p>
+<p>已拦（致承钧），并把 <code>stale</code> 与废弃名 <code>staleOnly</code> <strong>双双向契约登记</strong>。</p></blockquote>
+<p><strong>另两处差异（不构成破坏，但前提不成立）</strong>：</p>
+<table>
+<thead><tr><th>主理人信中的表述</th><th>磁盘实际</th><th>处置</th></tr></thead>
+<tbody>
+<tr><td>「契约里要删掉 <code>/admin/activity/communities</code>」</td><td><strong>契约里本来就没有这个端点行</strong>（grep <code>docs/API-CONTRACT.md</code> 命中 0）。但<strong>任务 #32 在承钧名下 pending</strong>（新增该端点），与「服务端不提供独立社区字典端点」的裁定<strong>直接冲突</strong></td><td>已报主理人请撤 #32；契约 §13.6.2.1.1 已写明裁定与理由</td></tr>
+<tr><td>「§5.7.7.1 指向了一个不存在的章节」</td><td>该章节<strong>存在</strong>（<code>:559</code>），只是五级标题。测试 <code>config-changelog-fields.test.ts:80</code> 的断言只是 <code>expect(CONTRACT).toContain('beforeValue')</code>——<strong>不解析章节号</strong>，所以那个测试现在是通过的</td><td>已按主理人第一修法提为 <code>#### 5.7.7.1</code> 独立章节（已核无脚本按章节号解析契约，改层级安全）</td></tr>
+</tbody></table>
+<h3>5R.2 契约改动 4 项（本轮落地，契约是全局事实源，只我改）</h3>
+<table>
+<thead><tr><th>#</th><th>改什么</th><th>落点</th><th>状态</th></tr></thead>
+<tbody>
+<tr><td>①</td><td><code>/admin/activity/communities</code> 端点</td><td>§13.6.2.1.1 + A7 行</td><td>✅ 契约里本无此端点行；已补「社区下拉由前端从 elders 返回结果去重」+「服务端不提供独立社区字典端点」+ 理由（第二份需同步的数据源）</td></tr>
+<tr><td>②</td><td>§13.6 elders 逐字参数名</td><td>§13.6.2.1</td><td>✅ 5 个参数逐字成表 + <strong>废弃名表</strong>（<code>staleOnly</code>/<code>community</code>/<code>keyword</code>，各带「若真发生去哪查」）+ §13.6.2.3 字段级出参表（15 字段）</td></tr>
+<tr><td>③</td><td>§5.7.7.1 提独立章节</td><td><code>:559</code></td><td>✅ 五级 → 四级</td></tr>
+<tr><td>④</td><td>营收端点出参表</td><td>§13.6.3</td><td>✅ 参数表 + 字段级出参表 + 6 个 <code>RevenueExcludeReason</code> 取值域 + <code>avgPriceFen</code> 空值是 <code>null</code> 不是 <code>"0"</code> + <code>details</code> 上限 500</td></tr>
+</tbody></table>
+<p><strong>顺带修掉的一处真缺口</strong>：<code>details</code> 硬上限 500 条<strong>但出参不带 <code>truncated</code> 标记</strong>—— 财务看到恰好 500 条<strong>无法区分「正好 500」与「被截断」</strong>。 契约已显式登记「上限 500」并写明该缺口与处置方向（与 §5.7.7 的 <code>truncated</code> 同源，revenue 端尚未补）。 <strong>留白比「不写上限」更危险</strong>——不写上限，前端会以为看到的是全量。</p>
+<h3>5R.3 P10 第 2 步（前端类型从契约导入）—— <strong>本轮不做，但要写明将来怎么做</strong></h3>
+<p>主理人裁定：「契约不是 TS，codegen 工具链在 MVP 是过度工程——但要在报告写明『这一层现在没有，以及将来怎么做』，不能留空白」。</p>
+<p><strong>这一层现在没有。</strong> 具体缺三样：</p>
+<table>
+<thead><tr><th>缺什么</th><th>现在的替代做法</th><th>代价</th></tr></thead>
+<tbody>
+<tr><td>① 契约 → TS 类型的自动生成</td><td>前端手写 <code>ActivityElderRow</code> 等类型</td><td>17 处字段名不对齐（P10），全靠人工发现</td></tr>
+<tr><td>② 契约 → 前端类型的<strong>单向门禁</strong></td><td>靠映棠的 <code>enum-guard.ts</code> 抓枚举域；<strong>字段名</strong>尚无门禁</td><td>字段名错位在 TS 里<strong>完全合法</strong>（admin.routes.ts 自己拼对象，没 DTO 类型），编译通过、运行不报错、页面<strong>永久空白</strong></td></tr>
+<tr><td>③ 契约 → 服务端 DTO 类型的自动生成</td><td>服务端手写 <code>ElderActivityRow</code></td><td>同上——<code>admin.service.ts:97-119</code> 手工拼对象，改字段名无编译错误</td></tr>
+</tbody></table>
+<p><strong>将来怎么做（三步，按投入递增，MVP 只做第 1 步）</strong>：</p>
+<ol><li><strong>W-MVP（现在就能做，零工具链）</strong>：把契约的逐字出参表<strong>变成断言</strong>。</li></ol>
+<p>   承钧已在 <code>config-changelog-fields.test.ts</code> 对 changelog 做过这个模式（<code>expect(BLOCK).toContain('beforeValue:')</code>）。    <strong>同一模式套用到 elders / revenue</strong>：服务端 <code>admin.service.ts</code> 的返回对象里每个字段名逐字断言。    ——这不需要 codegen，<strong>只需要有人写 30 行断言</strong>，且能立刻拦住「字段名写错」这类静默失效。</p>
+<ol><li><strong>W+1（轻量 codegen）</strong>：契约的出参表用<strong>结构化 YAML/JSON front-matter</strong> 承载（而非 Markdown 表格），</li></ol>
+<p>   一个 30 行的脚本生成 <code>packages/shared/src/types/activity.ts</code>。    ——不引入完整 OpenAPI/codegen 工具链（那才是过度工程），只做<strong>我们自己那一张表的生成</strong>。</p>
+<ol><li><strong>W+2（完整契约驱动）</strong>：上 OpenAPI 3.1 + <code>openapi-typescript</code>，</li></ol>
+<p>   前端 <code>import type</code> 直接吃生成物，服务端用 zod schema 反推。    ——<strong>前提是契约本身要能机器解析</strong>。而<strong>本轮做的逐字表就是往这个方向走的第一步</strong>：    Markdown 散文无法被机器核对，逐字表可以。<strong>没有本轮的逐字表，W+2 无从谈起。</strong></p>
+<blockquote><p><strong>一句话</strong>：<strong>这一层现在没有，但它不是「将来才会有」——是「本轮的逐字表让它将来会有」。</strong></p>
+<p>散文的契约无法被机器核对，逐字表可以；逐字表不自动生成类型，但它是 codegen 的<strong>唯一前置条件</strong>。</p></blockquote>
+<h3>5R.4 机制③「磁盘在变」—— 已写进 P1 规格 §2.4.1 + §3.5</h3>
+<p>主理人本轮新发现的第四种丢弃形态，细节见 §3.3。</p>
+<hr>
+<h2>📌 本轮增补（第三轮 · 2026-10）</h2>
+<p>主理人核验了本报告并给出两处纠正 + 一处撤销，本轮已全部落实：</p>
+<table>
+<thead><tr><th>主理人意见</th><th>处置</th><th>落点</th></tr></thead>
+<tbody>
+<tr><td><strong>P1 退出码不可靠</strong> —— 采纳并推广</td><td>本轮产出<strong>实现规格</strong></td><td><a href="./GATE-COLLECTION-SPEC.md"><code>GATE-COLLECTION-SPEC.md</code></a></td></tr>
+<tr><td><strong>P4 文档表数过期</strong> —— <strong>撤销</strong>（文档是对的）</td><td>本轮自曝该假阳性，并写入<strong>踩坑记录</strong></td><td>§5 新增「踩坑记录」</td></tr>
+<tr><td><strong>「未发现问题」要改说法</strong> —— 逐条核而非声明</td><td>本轮逐条复核 §8 的 14 项</td><td><a href="./GATE-AUDIT-L10-SELFCHECK.md"><code>GATE-AUDIT-L10-SELFCHECK.md</code></a></td></tr>
+<tr><td><strong>新增线索 10</strong></td><td>逐条复核 → 发现 2 处方向性错误</td><td>见 §3 新增 P11 / P12</td></tr>
+<tr><td><strong>方法论模板</strong></td><td>独立成文，可直接套用</td><td><a href="./GATE-AUDIT-METHODOLOGY-TEMPLATE.md"><code>GATE-AUDIT-METHODOLOGY-TEMPLATE.md</code></a></td></tr>
+</tbody></table>
+<p><strong>本轮新发现（4 条，均已复核）</strong>：</p>
+<ul><li><strong>P10（🔴）</strong>：<code>/admin/activity/elders</code> 三方字段 <strong>17 处不对齐</strong>（服务端 ↔ 前端 ↔ mock），含 1 处单位不同（<code>freshnessMinutes</code> vs <code>freshnessSec</code>）→ 真后端一接即大面积白板 + 契约 §13.6 硬约束（UNKNOWN 单独视觉分区）从服务端退化为前端推断。<strong>原 P6 判定「契约侧需修」方向反了</strong> —— 契约是<strong>从未有字段级定义</strong>，根因是三方各写各的。</li><li><strong>P11（🟡）</strong>：生产代码有 <strong>60+ 处 <code>.catch()</code></strong>，其中 <code>risk.routes.ts</code> 5 处 <code>catch(() => undefined)</code> <strong>无注释</strong>（同类 <code>review.routes.ts:75</code> 有注释）→ 风控动作失败被静默吞掉；<code>payment.service.ts:487</code> 对账查询失败被兜底成 <code>[{cnt:0n, amt:0n}]</code> = <strong>「完美对平」</strong>。</li><li><strong>P12（🟡）</strong>：<code>numTotalTestSuites</code> <strong>不是文件数</strong>（实测 195 vs 35）→ 主理人三数比对里的 B 若按字面取该字段会<strong>直接假红</strong>。正确口径是 <code>testResults.length</code>。</li><li><strong>P13（🟢，第四轮已撤销）</strong>：第三轮我判「server 测试存在随机失败」→ 第四轮实测证明那是 <strong>threads 池的 native 崩溃</strong>（机制 3），配置层四件套下 <strong>14/14 全绿零崩溃</strong>。→ 「测试不稳定」是误判，根因在池不在测试。</li></ul>
+<p><strong>本轮实测新数据（⚠️ 第四轮已修正口径，见 §3.2 —— 下面这张表的「默认池」标签是错的）</strong>：</p>
+<table>
+<thead><tr><th>配置</th><th>收集文件数</th><th>Tests</th><th>失败数</th><th>退出码</th></tr></thead>
+<tbody>
+<tr><td>默认池</td><td>35 / 35 / 35</td><td>737</td><td><strong>2 / 1 / 0</strong></td><td>1 / 1 / 0</td></tr>
+<tr><td><code>--pool=forks</code> 单独</td><td>35 / 35 / 35</td><td>737</td><td>1 / 0 / 0</td><td>1 / 0 / 0</td></tr>
+<tr><td><code>--pool=forks --no-file-parallelism</code></td><td>35 / 35 / 35</td><td>737</td><td>0 / 0 / 0</td><td>0 / 0 / 0</td></tr>
+<tr><td><code>--no-file-parallelism</code> 单独</td><td>35 / 35 / 35</td><td>737</td><td>0 / 0 / 0</td><td>0 / 0 / 0</td></tr>
+<tr><td><strong>清缓存后 <code>--pool=forks</code></strong></td><td>35 / 35 / 35</td><td>737</td><td>0 / 0 / 0</td><td>0 / 0 / 0</td></tr>
+</tbody></table>
+<p>→ <strong>机制 1 / 机制 2 在 server 包上均未复现</strong>（清缓存后仍全收集）→ 当前由<strong>配置层</strong> <code>pool: 'forks' + singleFork: true</code> 稳定。<strong>但我未复现主理人观测到的 31/32/33 波动，故不能断言「已根治」</strong>（见 §9 诚实边界）。</p>
+<hr>
+<h2>3.2 第四轮实测修正：「默认池」这个说法本身就是错的（🔴 推翻前一轮的口径）</h2>
+<blockquote><p><strong>本节是第三轮发回后，我自己继续实测发现的。前一轮报告与主理人对照表里的「默认池」一列，全部需要重读。</strong></p></blockquote>
+<h3>3.2.1 事实一：仓库的 <code>vitest.config.ts</code> 已显式写 <code>pool: 'forks'</code>，所以「不传参数」根本不是 threads 池</h3>
+<pre><code># apps/server/vitest.config.ts 剥注释后的 test 段（第四轮实测时的磁盘状态）
+test: {
+    environment: 'node',
+    include: ['src*.test.ts', 'src*.spec.ts'],
+    reporters: ['default'],
+    pool: 'forks',
+    fileParallelism: false,
+    poolOptions: { forks: { singleFork: true } },
+    cacheDir: fileURLToPath(new URL('./node_modules/.vitest', import.meta.url)),
+  },</code></pre>
+<p>vitest 2.1 的 CLI 默认确实是 <code>threads</code>（<code>node_modules/vitest/dist/chunks/cac.*.js:965</code>：「default: <code>threads</code>」），<strong>但配置文件里的 <code>pool: 'forks'</code> 会覆盖它</strong>。</p>
+<blockquote><p><strong>所以「不传 pool 参数」= 配置层的 forks + singleFork + fileParallelism:false，不是 threads。</strong></p>
+<p>前一轮报告里「默认池」那一列，<strong>测的其实是配置层四件套</strong>，标签是错的。</p></blockquote>
+<h3>3.2.2 事实二：真正的 threads 池会<strong>整进程崩溃</strong>（段错误），这不是「丢文件」</h3>
+<p>第四轮用 <code>--pool=threads</code> 显式强制，连跑 <strong>8 次</strong>：</p>
+<table>
+<thead><tr><th>次数</th><th>退出码</th><th>收集</th><th>报告</th><th>现象</th></tr></thead>
+<tbody>
+<tr><td>run1</td><td>1</td><td>38/38 齐</td><td>有</td><td>2 个测试失败</td></tr>
+<tr><td>run2</td><td>0</td><td>38/38 齐</td><td>有</td><td>—</td></tr>
+<tr><td>run3</td><td>0</td><td>38/38 齐</td><td>有</td><td>—</td></tr>
+<tr><td><strong>run4</strong></td><td><strong>139</strong></td><td>38/38 齐</td><td>有</td><td><strong>Segmentation fault</strong></td></tr>
+<tr><td>run5</td><td>0</td><td>38/38 齐</td><td>有</td><td>—</td></tr>
+<tr><td><strong>run6</strong></td><td><strong>139</strong></td><td>38/38 齐</td><td>有</td><td><strong>Segmentation fault</strong></td></tr>
+<tr><td>run7</td><td>0</td><td>38/38 齐</td><td>有</td><td>—</td></tr>
+<tr><td>run8</td><td>0</td><td>38/38 齐</td><td>有</td><td>—</td></tr>
+</tbody></table>
+<p>bash 层的 stderr 明确写着：</p>
+<pre><code>bash.exe: line 10: 3487 Segmentation fault  timeout 120 npx.cmd vitest run --pool=threads ...</code></pre>
+<p><strong>关键观察</strong>：</p>
+<ul><li><strong>EXIT=139 = 128 + 11 = SIGSEGV</strong></li><li><strong>收集数始终 38/38 齐</strong> —— 崩溃发生在<strong>测试执行阶段</strong>，不是收集阶段</li><li>另一次观测到 <strong>EXIT=3221225477 = 0xC0000005 = STATUS_ACCESS_VIOLATION</strong>（Windows 访问冲突），且那次<strong>JSON 报告根本没产出</strong>（<code>exec=0</code>、35 个文件全"漏"）</li></ul>
+<h3>3.2.3 这解释了主理人观测到的「31/32/33 波动」</h3>
+<blockquote><p><strong>主理人原信</strong>：「<code>--pool=forks</code> 单独用会波动（31/32/33）」</p></blockquote>
+<p><strong>新的解释</strong>：threads 池下 vitest <strong>会崩</strong>。崩在执行阶段 → 报告里只留下崩之前跑完的文件 → <strong>Test Files 数就是 31/32/33 这种随机值</strong>。</p>
+<blockquote><p><strong>所以那不是「丢了文件」，是「进程崩了，剩下没跑完」。</strong></p>
+<p>这个区别很重要：<strong>「丢文件」的根因是 EPERM 写盘（机制 1/2），「31/32/33」的根因是 native 崩溃（机制 3）。</strong></p></blockquote>
+<h3>3.2.4 对照组：配置层四件套 <strong>8/8 完美</strong></h3>
+<p>同一时刻、同一磁盘（38 个测试文件）、同一命令只去掉 <code>--pool=threads</code>：</p>
+<table>
+<thead><tr><th>次数</th><th>退出码</th><th>收集</th><th>失败</th><th>崩溃</th></tr></thead>
+<tbody>
+<tr><td>run1–run8</td><td><strong>0 / 0 / 0 / 0 / 0 / 0 / 0 / 0</strong></td><td><strong>38/38 齐</strong> ×8</td><td>0 ×8</td><td><strong>0</strong></td></tr>
+</tbody></table>
+<blockquote><p><strong>配置层四件套 8/8 零异常，四项同时生效时没有观察到任何收集缺失或崩溃。</strong></p></blockquote>
+<h3>3.2.5 修正主理人对照表的读法</h3>
+<table>
+<thead><tr><th>主理人对照表原文</th><th>修正后</th></tr></thead>
+<tbody>
+<tr><td>「默认池 → 28」</td><td><strong>在当前仓库不成立</strong> —— 配置文件已写 <code>pool: 'forks'</code>，不传参数走的是四件套。<strong>要测 threads 必须显式 <code>--pool=threads</code></strong></td></tr>
+<tr><td>「<code>--pool=forks</code> 单独用会波动（31/32/33）」</td><td><strong><code>--pool=forks</code> 不会让配置里的 <code>singleFork</code> / <code>fileParallelism</code> 失效</strong>（命令行只覆盖 <code>pool</code> 字段）。<strong>31/32/33 的真因是 threads 池的 native 崩溃</strong></td></tr>
+<tr><td>「<code>fileParallelism: false</code> 才是稳定项」</td><td>⚠️ <strong>不准确</strong>。实测 <code>pool: 'forks' + singleFork: true</code>（即配置层）<strong>8/8 全绿零崩溃</strong>。<code>fileParallelism: false</code> 是<strong>第四件</strong>，不是唯一稳定项</td></tr>
+<tr><td>「两个开关必须一起上」</td><td>⚠️ 实测配置是<strong>四件套</strong>：<code>pool: 'forks'</code> + <code>fileParallelism: false</code> + <code>poolOptions.forks.singleFork: true</code> + <code>cacheDir</code>（指向项目内）。<strong>四件一起才 8/8 完美</strong></td></tr>
+</tbody></table>
+<h3>3.2.6 承钧已把四件套 + 断言落盘（第四轮实测时的磁盘状态）</h3>
+<p><code>apps/server/vitest.config.ts</code>（mtime 06:05）、<code>apps/miniapp-companion/vitest.config.ts</code>（mtime 06:10）都已是四件套。 <code>apps/server/scripts/check-test-collection.ts</code>（mtime 06:12）的 <code>checkVitestConfig</code> 已断言：</p>
+<ul><li><code>pool: 'forks'</code> 必须配（剥注释 + 定位 <code>test:</code> 段，防注释恒真）</li><li><code>fileParallelism</code> 必须显式写 <code>true</code>/<code>false</code> 之一（只写 key 不给值视为未配）</li><li><strong><code>fileParallelism</code> 不得重复出现</strong> —— 注释记录了这个真实踩坑：曾在同一份 config 里出现两次（上方 true、下方 false），<strong>JS 语义是后者覆盖前者（运行时确实生效 false），但读文件的人只看得到第一个 true</strong> → 下一个改代码的人以为可以并行，把 false 删掉，丢文件问题原地复活</li></ul>
+<blockquote><p><strong>这条断言的设计质量很高</strong>，符合规格 §3 维度④「禁列/白名单带理由」的思路。</p></blockquote>
+<h3>3.2.7 新的机制分类（第三种丢文件形态确认）</h3>
+<table>
+<thead><tr><th>形态</th><th>现象</th><th>判据</th><th>根因</th></tr></thead>
+<tbody>
+<tr><td><strong>机制 1</strong> EPERM 写盘</td><td>文件数少，报告说 passed</td><td>清缓存后仍不收集</td><td>沙箱 broker IPC 裁决</td></tr>
+<tr><td><strong>机制 2</strong> 并发写同名缓存</td><td>同上</td><td>清缓存后恢复</td><td>并发写缓存目录</td></tr>
+<tr><td><strong>机制 3（新增）</strong> native 崩溃</td><td>文件数少，<strong>退出码 139 / 0xC0000005</strong>，可能<strong>无报告</strong></td><td>退出码是信号值而非 0/1</td><td>threads 池 native 段错误</td></tr>
+</tbody></table>
+<blockquote><p><strong>机制 3 的判据最简单也最可靠：退出码 ≥ 128（信号）或 Windows 异常码（如 3221225477）。</strong></p>
+<p>这也再次印证「退出码不能当判据」——但<strong>反过来说，退出码 ≥ 128 是一个极强的「出了大事」信号</strong>，必须单独判。</p></blockquote>
+<h3>3.2.8 <code>include</code> 模式核对（承钧的改动没有改坏它）</h3>
+<p>承钧把 <code>include</code> 从 <code>['src/**/<em>.test.ts', ...]</code> 改成了 <code>['src</em>.test.ts', ...]</code>（少了两层斜杠）。核对：</p>
+<pre><code>磁盘实际测试文件数 = 35
+'src*.test.ts'      命中 35 个   ← tinyglobby 的 * 跨目录分隔符，等价
+'src/**/*.test.ts'  命中 35 个</code></pre>
+<blockquote><p><strong>等价，未改坏。</strong> 但这是一个<strong>易被误读的写法</strong> —— <code>src*.test.ts</code> 看上去像"只匹配 src 根目录"，实际是"src 下任意层级"。<strong>建议在 config 里加一行注释说明这一点</strong>，否则下一个人会以为它只匹配一层。</p></blockquote>
+<hr>
+<h2>0. 执行摘要</h2>
+<table>
+<thead><tr><th>项</th><th>结论</th></tr></thead>
+<tbody>
+<tr><td>审计对象</td><td>4 个包（server / admin-web / miniapp-companion / miniapp-user）+ shared + 4 份文档</td></tr>
+<tr><td>门禁脚本</td><td>8 个（server scripts 5 + admin-web scripts 5，含.mjs）</td></tr>
+<tr><td>测试文件</td><td>磁盘 36 个（server 34 + companion 2 + 其他 0）</td></tr>
+<tr><td>发现问题</td><td><strong>13 条</strong>（严重 4 / 中等 7 / 轻微 2），本轮新增 4 条</td></tr>
+<tr><td>最严重发现</td><td><strong>companion 默认池随机丢测试文件且 errors=0 —— 退出码 0、无任何告警、每次都可能"全绿"</strong></td></tr>
+<tr><td>主理人线索复核</td><td>8 条：<strong>存在 3 / 不存在 3 / 部分存在 2</strong>（第三轮逐条复核后，3 条的<strong>表述</strong>已修正）</td></tr>
+<tr><td>第三轮增补</td><td><strong>P1 实现规格</strong> + <strong>线索 10 自审</strong> + <strong>方法论模板</strong>（3 份新文档）</td></tr>
+<tr><td>结论</td><td>门禁体系<strong>主体有效</strong>，但<strong>存在一类系统性缝隙：机制正确却挂在会静默失效的路径上</strong></td></tr>
+</tbody></table>
+<p><strong>一句话结论</strong>：这不是「门禁写错了」，而是「<strong>门禁跑没跑、跑全没跑全，没人能确定</strong>」——在 CI 存在之前，所有"passed"都是不可采信的。</p>
+<hr>
+<h2>1. 八条线索判定表</h2>
+<table>
+<thead><tr><th>#</th><th>线索</th><th>判定</th><th>证据（实测）</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>门禁覆盖 vs 门禁自身在检查范围外</td><td><strong>部分存在</strong></td><td>admin-web <strong>已修</strong>（<code>tsconfig.json</code> include 含 <code>scripts/**/*.ts</code>，且带 6 行设计说明注释）；<strong>server 未修</strong>（<code>tsconfig.json:29</code> include=<code>["src","prisma","vitest.config.ts"]</code>，<strong><code>scripts/</code> 不在内</strong>）→ <code>verify-doc-configs.ts</code>(31KB) 与 <code>check-migration-drift.mjs</code> 的类型错误不会被 tsc 抓到</td></tr>
+<tr><td>2</td><td>断言检查点 ≠ 破坏落点</td><td><strong>不存在</strong></td><td>逐例核 <code>coupon-deduct-wiring.test.ts</code>：破坏注入点直读 <code>order.service.ts</code> 源码块（<code>SVC_PATH</code> 定位），断言查同一块；<code>companion-income-contract.test.ts:119</code> 明确覆盖「<strong>路由文件</strong>出参也不得带 cipher（第一版漏扫了这里）」——落点与断言同源</td></tr>
+<tr><td>3</td><td>恒真命题</td><td><strong>不存在</strong></td><td><code>prisma:migrate:diff</code> 同文件自比仅存于 <code>scripts/*.mjs:5</code> 的<strong>注释</strong>（说明已修），脚本已改为真迁移链比对；<code>migrations/</code> 目录实存 4 个迁移 + lock</td></tr>
+<tr><td>4</td><td>吞异常型假通过</td><td><strong>不存在</strong>（⚠️ 表述已修正）</td><td><strong>在测试代码中</strong>搜 <code>.catch(e=>e)</code> / <code>.catch(()=>{})</code> / catch 后 <code>expect(true)</code>：<strong>0 命中</strong>。⚠️ <strong>上轮写「全量搜」是错的</strong>——全仓实有 <strong>60+ 处</strong> <code>.catch()</code>（上轮只搜了测试文件后缀）。本轮逐条核生产代码 8 处关键路径，发现 2 处建议改进（见 P11）</td></tr>
+<tr><td>5</td><td>守门测试被静默丢弃</td><td><strong>存在（本轮核心）</strong></td><td>见 §2 详细证据。companion 默认池 <code>1→2→1</code> 随机波动，<strong>每次 errors=0、退出码 0</strong></td></tr>
+<tr><td>6</td><td>mock 侧永远不报错</td><td><strong>部分存在</strong></td><td>号段/枚举已由 <code>enum-guard.ts</code> + <code>doc:check:configs</code> 段6.1–6.4 守住（28 键双向差集为空）；<strong>但 mock 字段名仍靠人工对齐</strong>——<code>mock/db.ts</code> 中 <code>createdAt</code> 大量使用，未见"mock 字段名 ↔ 契约字段名"的自动交叉断言</td></tr>
+<tr><td>7</td><td>文档承诺 vs 磁盘</td><td><strong>不存在</strong>（❌ 上轮判「部分存在」是<strong>假阳性</strong>，已撤销）</td><td>schema 实为 <strong>54 模型/66 枚举</strong>，<code>DATABASE.md</code> <strong>三处均为 54/66</strong>（<code>:6</code> / <code>:27</code> / <code>:42</code>）。上轮 grep 命中的「53」在 <code>:784</code> 的<strong>历史变更记录</strong>里（描述「45→53」这个当时的动作），<strong>不是当前口径声明</strong>。→ 见 §5 踩坑记录</td></tr>
+<tr><td>8</td><td>不可逆操作的「可逆性幻觉」</td><td><strong>部分存在</strong></td><td>券 <code>resume</code>/<code>publish</code> 同目标态 <strong>已正确防御</strong>：<code>validateResume</code> 不复用 <code>canTransition</code>（<code>coupon.ts:343-345</code> 注释明确记录曾踩坑），<code>coupon.test.ts:259</code> 有 <code>validateResume(DRAFT).ok === false</code> 断言守住；但<strong>缺"所有状态机枚举"的同目标态路径全量扫描门禁</strong>，靠人记</td></tr>
+</tbody></table>
+<hr>
+<h2>2. 线索 5 详证：本轮最严重发现</h2>
+<h3>2.1 现象</h3>
+<p><code>apps/miniapp-companion</code> 磁盘有 <strong>2 个</strong> <code>.test.ts</code>，但默认池随机只收集 1 个：</p>
+<pre><code>$ cd apps/miniapp-companion &amp;&amp; npx vitest run     # 连跑 3 次
+  run: files=1 errors=0
+  run: files=2 errors=0        ← 同一命令，结果不同
+  run: files=1 errors=0</code></pre>
+<p><strong>最危险的一点：<code>errors=0</code>、退出码 <code>0</code>。</strong> 与 server 早前观测到的 <code>Errors 1 error</code> 不同，companion 的失败<strong>连告警都没有</strong>——日志里两个文件都打 <code>✓</code>，汇总数字却是 1。</p>
+<h3>2.2 根因（已定位到栈）</h3>
+<pre><code>Error: EPERM: operation not permitted, open
+  '...node_modules\.vitest-tmp\...\ssr\40b9f1f37d5bd759c353e90078138580f67eb091'
+ ❯ wrappedPromisesWriteFile  node-brokered-fs-shim.cjs:701:20</code></pre>
+<p>WorkBuddy 桌面端沙箱的 fs broker 对 <code>fs/promises.writeFile</code> 做权限裁决，vitest 写 SSR 转换产物失败。<strong>失败被吞，只表现为"少收集了文件"而非"报错"</strong>——vitest 2.1.9 把 unhandled error 单列到 <code>Errors</code> 段，而 companion 这次连 <code>Errors</code> 都是 0。</p>
+<h3>2.3 <code>--pool=forks</code> 的效果（实测，非推测）</h3>
+<table>
+<thead><tr><th>包</th><th>默认池（threads）</th><th><code>--pool=forks</code></th><th>磁盘</th></tr></thead>
+<tbody>
+<tr><td>server</td><td>34/34 稳定（4 次连跑 721 tests 全过）</td><td>33–34 波动</td><td>34</td></tr>
+<tr><td>miniapp-companion</td><td><strong>1–2 随机波动</strong></td><td><strong>2/2 稳定</strong>（3 次）</td><td>2</td></tr>
+<tr><td>miniapp-user</td><td>无测试文件</td><td>—</td><td><strong>0</strong></td></tr>
+</tbody></table>
+<p><strong>结论</strong>：<code>pool=forks</code> 在 companion 上<strong>确实有效</strong>（消除波动）；server 当前默认池已稳定，但<strong>无任何机制保障</strong>——它只是"这次没踩到"。</p>
+<h3>2.4 为什么退出码不能当判据（实测反例）</h3>
+<pre><code>cd apps/miniapp-companion &amp;&amp; npx vitest run --pool=forks   → 退出码 1（有 EPERM）
+cd apps/miniapp-companion &amp;&amp; npx vitest run                 → 退出码 0（丢了文件）
+cd apps/server                &amp;&amp; npx vitest run            → 退出码 1（有 EPERM）</code></pre>
+<p>同一份代码、同一台机器，退出码 <strong>1 和 0 都出现过</strong>，且<strong>退出码 1 的那次反而收集更全</strong>。结论：</p>
+<blockquote><p><strong>退出码与收集完整性是两个正交维度。任何只依赖 <code>exit code == 0</code> 的 CI 门禁，在本环境下都是不可靠的。</strong></p></blockquote>
+<hr>
+<h2>3. 问题清单（按严重级别）</h2>
+<h3>🔴 严重</h3>
+<table>
+<thead><tr><th>ID</th><th>问题</th><th>位置</th><th>现象</th><th>复现命令</th><th>建议修法</th></tr></thead>
+<tbody>
+<tr><td><strong>P1</strong></td><td>测试文件随机丢弃且完全静默</td><td><code>apps/miniapp-companion</code>（机制层，全包受影响）</td><td>默认池随机 1/2 收集，<code>errors=0</code>、退出码 0。server 默认池亦观测到 33/34波动</td><td>`cd apps/miniapp-companion &amp;&amp; for i in 1 2 3; do npx vitest run \</td><td>grep -E "Test Files\</td><td>Errors"; done`</td><td>① 全部 vitest 配置固化 <code>pool: 'forks'</code>（写入 <code>test</code> 块，不靠命令行传）；② 落地<strong>收集完整性断言</strong>（见 §4）；③ CI 用「收集数 + 点名清单」双判据，<strong>不看退出码</strong></td></tr>
+<tr><td><strong>P2</strong></td><td>门禁脚本自身不在类型检查范围</td><td><code>apps/server/tsconfig.json:29</code></td><td><code>include</code> 为 <code>["src","prisma","vitest.config.ts"]</code>，<code>scripts/</code> 缺失→ <code>verify-doc-configs.ts</code>(31KB)、<code>check-migration-drift.mjs</code> 的类型错误不会被 tsc 抓到</td><td>`cd apps/server &amp;&amp; npx tsc -p tsconfig.json --noEmit --listFiles \</td><td>grep -c scripts`（预期 0）</td><td>把 <code>scripts/**/*.ts</code> 加入 include（照抄 admin-web 的做法 + 同样的设计注释）；<code>.mjs</code> 可另起 <code>tsconfig.scripts.json</code> 或 <code>allowJs</code></td></tr>
+<tr><td><strong>P3</strong></td><td>门禁无任何统一入口，靠人记得跑</td><td>全仓</td><td>server 8 个门禁散落：<code>test</code> / <code>typecheck</code> / <code>prisma:migrate:check</code> / <code>doc:check:configs</code> / <code>prisma:validate</code>… <strong>无聚合 script</strong>；admin-web 亦无。CI 未建</td><td>见 §5 门禁清单表</td><td>建根 <code>package.json</code> 的 <code>verify:all</code>（串起全部门禁），CI 只调它——让"忘记跑某个门禁"物理上不可能</td></tr>
+</tbody></table>
+<h3>🟡 中等</h3>
+<table>
+<thead><tr><th>ID</th><th>问题</th><th>位置</th><th>现象</th><th>复现命令</th><th>建议修法</th></tr></thead>
+<tbody>
+<tr><td><del><strong>P4</strong></del></td><td><del>文档库表/枚举数已过期</del></td><td>—</td><td>❌ <strong>撤销（本轮自曝假阳性）</strong>。<code>DATABASE.md:6/:27/:42</code> <strong>三处均为 54 张/66 枚举</strong>，文档是对的。我上轮 grep 命中的「53」在 <code>:784</code> 的<strong>历史变更记录</strong>（描述「45→53」这个当时的动作），<strong>不是当前口径声明</strong></td><td><code>grep -n "张表" docs/DATABASE.md</code> → <code>:6/:27/:42</code> 全是 54/66</td><td><strong>无需修改</strong>。教训见 §5 踩坑记录</td></tr>
+<tr><td><strong>P5</strong></td><td>mock 字段名无自动交叉断言</td><td><code>apps/admin-web/src/api/mock/db.ts</code></td><td><code>createdAt</code> 等字段与契约字段名的一致性靠人工；映棠已抓 9 处，但<strong>无门禁防复发</strong></td><td>人工比对 mock/db.ts 与 API-CONTRACT §5.7.7.1</td><td>在 <code>enum-guard.ts</code> 增设「mock 出参字段名 ⊆ 契约字段名」断言（字段级镜像，号段级之外）</td></tr>
+<tr><td><strong>P6</strong></td><td>无"同目标态路径"全量扫描门禁</td><td><code>apps/server/src/domain/*.ts</code></td><td><code>resume</code>/<code>publish</code> 同目标态已正确防御，但<strong>其余状态机（order/companion/application/safety-suspend）无同目标态全量核查</strong></td><td>人工遍历各 <code>canTransition</code></td><td>加一条单测：枚举每个状态机的 <code>(from,to)</code> 对，断言「同目标态的两条路径其准入谓词不同或已显式文档化」</td></tr>
+<tr><td><strong>P7</strong></td><td>恒真断言防护未成制度</td><td>全仓</td><td>本轮逐例推演未发现恒真，但<strong>无通用防护</strong>；<code>prisma migrate diff</code> 同文件自比曾真实发生</td><td>—</td><td>门禁脚本内禁用「同一输入自比」写法；review checklist 增一条</td></tr>
+</tbody></table>
+<h3>🟢 轻微</h3>
+<table>
+<thead><tr><th>ID</th><th>问题</th><th>位置</th><th>现象</th><th>建议</th></tr></thead>
+<tbody>
+<tr><td><strong>P8</strong></td><td>恒真注释残留在脚本头</td><td><code>scripts/prisma-migrate-diff.mjs:5</code>、<code>check-migration-drift.mjs:5</code></td><td>注释里保留旧脚本写法，grep 时易误判为未修</td><td>注释加 <code>-- 已废弃，见 xxx</code> 前缀</td></tr>
+<tr><td><strong>P9</strong></td><td>miniapp-user 零测试</td><td><code>apps/miniapp-user</code></td><td>磁盘 0 个 <code>.test.ts</code>、无 <code>vitest.config.ts</code>、<code>package.json</code> 无 <code>test</code> script</td><td>老人端是双入口之一，建议至少为关键 service 加冒烟测试；否则纳入门禁清单时显式标注"无测试"而非留空</td></tr>
+</tbody></table>
+<hr>
+<h2>3.1 第三轮新增问题（P10–P13）</h2>
+<h3>🔴 P10 · <code>/admin/activity/elders</code> 三方字段 17 处不对齐 —— 接真后端即大面积白板</h3>
+<blockquote><p><strong>上轮 P6 判定「契约健康感知端点 4 处过期 → 契约侧需修」，方向反了。</strong></p>
+<p>主理人要求核「前端实际消费」，本轮三方实测后：契约是<strong>从未有字段级定义</strong>（只有散文描述），真正的病灶是<strong>服务端 / 前端 / mock 三方各写各的</strong>。</p></blockquote>
+<table>
+<thead><tr><th>侧</th><th>文件</th><th>字段数</th></tr></thead>
+<tbody>
+<tr><td>服务端</td><td><code>apps/server/src/modules/activity/admin.service.ts</code> → <code>ElderActivityRow</code></td><td>15</td></tr>
+<tr><td>前端</td><td><code>apps/admin-web/src/shared/types.ts</code> → <code>ActivityElderRow</code></td><td>16</td></tr>
+</tbody></table>
+<p><strong>逐字段差集</strong>（本轮用脚本实算，非目测）：</p>
+<table>
+<thead><tr><th>方向</th><th>字段</th><th>数</th></tr></thead>
+<tbody>
+<tr><td>服务端有、前端没有 → 前端读到 <code>undefined</code></td><td><code>elderUserId</code> / <code>nickname</code> / <code>freshnessMinutes</code> / <code>explainLabel</code> / <code>partition</code> / <code>needsAttention</code> / <code>summaryDate</code> / <code>disclaimer</code></td><td><strong>8</strong></td></tr>
+<tr><td>前端有、服务端没有 → 真后端接上后读到 <code>undefined</code></td><td><code>id</code> / <code>elderNameMasked</code> / <code>age</code> / <code>freshnessSec</code> / <code>unknownReason</code> / <code>deviceStatus</code> / <code>consentStatus</code> / <code>consentScopeLevel</code> / <code>orderCount30d</code></td><td><strong>9</strong></td></tr>
+</tbody></table>
+<p><strong>最危险的一处：单位都不同</strong></p>
+<pre><code>服务端 ElderActivityRow.freshnessMinutes   ← 分钟
+前端   ActivityElderRow.freshnessSec        ← 秒，且前端自己 /60 当分钟用
+        HealthBoardPage.tsx:449  Math.floor(r.freshnessSec / 60)
+→ 真后端一接：显示实际值的 1/60；undefined 时显示 "NaN前"。全程零报错。</code></pre>
+<p><strong>第二危险的一处：契约硬约束的执行位置从服务端退到客户端</strong> 契约 §13.6 elders 明写：「<strong>数据不足（UNKNOWN）与信号过期必须单独视觉分区</strong>，禁止与正常状态混排」。 服务端出参<strong>有</strong> <code>partition: 'NORMAL' | 'UNKNOWN_OR_STALE'</code> 专门承载；前端<strong>没有</strong>这个字段，改为自己在 mock 层推断。 → 接真后端后，<strong>这条契约硬约束的保证消失</strong>（连带违反 §13.1 红线①「运营看到的就是老人端可见的」）。</p>
+<p><strong>复现命令</strong>（三方字段实算脚本见 <code>GATE-AUDIT-L10-SELFCHECK.md</code> §3）</p>
+<pre><code># 服务端出参字段
+sed -n '/export interface ElderActivityRow/,/^}/p' apps/server/src/modules/activity/admin.service.ts
+# 前端消费字段
+sed -n '/export interface ActivityElderRow/,/^}/p' apps/admin-web/src/shared/types.ts
+# 契约端点（散文，无字段级表）
+grep -n "admin/activity/elders" docs/API-CONTRACT.md</code></pre>
+<p><strong>建议修法</strong>（按优先级）</p>
+<ol><li><strong>契约补字段级出参表</strong>（字段名 + 类型 + <strong>单位</strong> + 必填性）—— 这是根因修复</li><li>以服务端 <code>ElderActivityRow</code> 为准，前端类型改为<strong>从契约/shared 导入</strong>（单一事实源）</li><li><code>freshnessSec</code> / <code>freshnessMinutes</code> <strong>统一命名与单位</strong>（建议全链路用 <code>freshnessSec</code>，因为 <code>computeConfidence</code> 的入参就是 <code>freshnessSec</code>）</li><li><code>partition</code> <strong>必须由服务端给</strong>，前端不得自行推断</li><li><strong>加门禁</strong>：契约字段表 ⊆ 服务端出参 ⊆ 前端消费类型（<strong>三方集合对账</strong>，不是数量对账）—— 这正是 <code>enum-guard.ts</code> 第 6 节「集合对账，不是数量对账」范式在<strong>出参字段</strong>上的应用</li></ol>
+<blockquote><p><strong>这条门禁是通用的</strong>：本项目所有「mock 层 ↔ 真实后端」接口都该有。</p>
+<p>现有 <code>enum-guard.ts</code> 只管<strong>枚举码值</strong>，管不到<strong>出参字段名</strong> → 这就是 P5 的具体可复现实例。</p></blockquote>
+<hr>
+<h3>🟡 P11 · 生产代码 60+ 处 <code>.catch()</code>，其中 2 处建议改进</h3>
+<p><strong>上轮说「5 处 catch 全为正确范式」是错的</strong>——那 5 处是<strong>测试文件内</strong>的 catch。全仓实有 <strong>60+ 处</strong> <code>.catch()</code>，绝大多数在前端页面（<code>.catch(() => null)</code> 属合理 UI 降级）。</p>
+<p>本轮逐条核了<strong>服务端 8 处关键路径</strong>：</p>
+<table>
+<thead><tr><th>位置</th><th>行为</th><th>判定</th></tr></thead>
+<tbody>
+<tr><td><code>prisma/seed.ts:297</code></td><td><code>log.error</code> + <code>process.exitCode = 1</code></td><td>✅ 失败可见</td></tr>
+<tr><td><code>scripts/check-coupon-backfill.ts:113</code></td><td><code>console.error</code> + <code>process.exitCode = 1</code></td><td>✅ 失败可见</td></tr>
+<tr><td><code>app.ts:86</code></td><td>健康检查失败 → <code>false</code> → HTTP 503</td><td>✅ 降级为不健康</td></tr>
+<tr><td><code>app.ts:130</code></td><td>cron 注册失败 → <code>log.warn</code></td><td>✅ 有日志</td></tr>
+<tr><td><code>activity/alert.service.ts:394</code></td><td>SOS 出口失败 → <code>log.error</code> + 转人工 + 工单不回滚</td><td>✅ 有意设计且注释解释了原因</td></tr>
+<tr><td><code>review.routes.ts:75</code></td><td>信用分越界不阻塞评价 → <code>catch(() => undefined)</code></td><td>✅ <strong>有注释</strong>说明是有意为之</td></tr>
+<tr><td><strong><code>risk.routes.ts:111,217,232,243,395</code></strong></td><td>风控动作失败 → <code>catch(() => undefined)</code></td><td>⚠️ <strong>无注释</strong></td></tr>
+<tr><td><strong><code>payment.service.ts:487</code></strong></td><td>对账查询失败 → <code>[{cnt:0n, amt:0n}]</code></td><td>⚠️ <strong>失败被当成"零"</strong></td></tr>
+</tbody></table>
+<p><strong>建议</strong></p>
+<ol><li><code>risk.routes.ts</code> 5 处：至少补注释说明「为什么可吞」；<strong>更好</strong>：写 <code>audit_logs</code> —— 风控动作失败必须留痕，否则事后无法追责</li><li><code>payment.service.ts:487</code>：改为抛错或返回显式 <code>null</code> 标记，<strong>调用方必须区分「真的零」和「查不到」</strong>。当前实现让 DB 抖动 → 对账变成「完美对平」→ <strong>对账门禁静默失效</strong>（与 P1 同型的问题：失败被伪装成成功）</li></ol>
+<p><strong>复现命令</strong></p>
+<pre><code>grep -rn "\.catch(" apps packages --include="*.ts" --include="*.tsx" | grep -v node_modules | grep -v "\.test\.ts" | wc -l</code></pre>
+<hr>
+<h3>🟡 P12 · <code>numTotalTestSuites</code> 不是文件数 —— 主理人三数比对里的 B 若按字面取会<strong>直接假红</strong></h3>
+<p><strong>本轮实测</strong>（server，磁盘 35 个 <code>.test.ts</code>）：</p>
+<pre><code>numTotalTestSuites = 195   ← describe 块数 ❌
+testResults.length  = 35    ← 文件数 ✅
+numTotalTests      = 737   ← 用例数
+numPassedTests     = 737</code></pre>
+<p><strong>验证方式</strong>（脚本实算）：737 个 <code>assertionResults</code> <strong>全部</strong>带 <code>ancestorTitles</code>（即全部位于 describe 内）→ describe 块数 195。</p>
+<p><strong>影响</strong>：主理人给承钧的原派单是「三数比对 <code>A === B === C</code>，B 取 <code>numTotalTestSuites</code>」——<strong>按字面实现会 35 ≠ 195 直接假红</strong>。 → <strong>正确口径：<code>testResults.length</code></strong>。已写进 <code>GATE-COLLECTION-SPEC.md</code> §2.1②。</p>
+<p><strong>复现命令</strong></p>
+<pre><code>cd apps/server &amp;&amp; npx vitest run --reporter=json --outputFile=.tmp/_f.json
+python -c "
+import json; d=json.load(open('.tmp/_f.json',encoding='utf-8'))
+print('numTotalTestSuites =', d['numTotalTestSuites'])
+print('testResults.length =', len(d['testResults']))
+print('numTotalTests      =', d['numTotalTests'])"</code></pre>
+<hr>
+<h3>🟢 P13 · server 包「测试稳定」结论需降级 —— ⚠️ <strong>第四轮已撤销（见 §3.2）</strong></h3>
+<p><strong>第三轮判定</strong>：「收集维度稳定 35/35，但<strong>测试维度默认池下 3 跑有 2 次失败</strong>」→ 判为 🟡 中等，交承钧定位。</p>
+<p><strong>第四轮实测推翻</strong>（根因找到了，<strong>不是测试本身不稳定</strong>）：</p>
+<table>
+<thead><tr><th>配置</th><th>连跑</th><th>收集</th><th>失败</th><th>崩溃</th></tr></thead>
+<tbody>
+<tr><td><strong><code>--pool=threads</code>（真 threads 池）</strong></td><td>8 次</td><td>38/38 齐</td><td><strong>2（run1）</strong></td><td><strong>2/8 段错误（EXIT=139）</strong></td></tr>
+<tr><td><strong>配置层四件套（不传 pool）</strong></td><td>8 次</td><td>38/38 齐</td><td><strong>0</strong></td><td><strong>0</strong></td></tr>
+<tr><td><strong>配置层四件套（复核）</strong></td><td>6 次</td><td>38/38 齐</td><td><strong>0</strong></td><td><strong>0</strong></td></tr>
+</tbody></table>
+<blockquote><p><strong>「随机失败」和「随机崩溃」都只出现在 threads 池下。</strong></p>
+<p>配置层四件套 <strong>14 次连跑（8+6）零失败零崩溃</strong>。</p></blockquote>
+<p><strong>结论</strong>：</p>
+<blockquote><p><strong>P13 撤销</strong>。server 包的测试在<strong>配置层四件套下是稳定的</strong>（14/14 全绿）。</p>
+<p>第三轮观测到的「随机失败」是 <strong>threads 池的 native 不稳定</strong>（同一根因：机制 3 崩溃）的<strong>另一种表现</strong>——崩之前已跑完的部分会报告失败。</p>
+<p><strong>教训</strong>：我把「池不稳定」误判成了「测试不稳定」——<strong>因为两者都表现为「有失败」</strong>。</p>
+<p><strong>判据</strong>：<strong>要区分「测试失败」与「环境失败」，必须看失败发生在哪个阶段</strong>（收集前 / 收集后执行中 / 进程崩溃）。</p>
+<p><strong>建议保留的一条</strong>：聚合入口应同时输出 <code>numFailedTests</code> <strong>与退出码</strong>（退出码 ≥ 128 = 崩溃，是独立信号）。</p></blockquote>
+<hr>
+<h2>3.3 第五轮新增 · 机制③「磁盘在变」：第四种丢弃形态</h2>
+<p><strong>主理人本轮实测发现的新形态</strong>，与前三种（EPERM 写盘 / 并发写同名缓存 / native 崩溃）<strong>机制不同、判据不同</strong>。</p>
+<h3>3.3.1 现象</h3>
+<p>门禁报「缺 <code>coupon-state-machine.test.ts</code>」，但该文件<strong>确实在磁盘上</strong>， 且<strong>集合级比对差集唯一、无顶替者</strong>（不是「A 丢了 B 补上」）。</p>
+<h3>3.3.2 证据链（主理人 2026-10-22 实测）</h3>
+<pre><code>06:20:20  落盘 coupon-state-machine.test.ts
+06:20:38  再落盘另一个测试文件
+   ↓ 同期跑门禁 → 报缺 coupon-state-machine.test.ts
+   ↓ 集合级比对 → 差集唯一，无顶替者
+   ↓ 磁盘稳定后 → 连跑 6 次门禁 + 6 次 vitest → 全 38/38，零波动</code></pre>
+<h3>3.3.3 为什么 <code>singleFork</code> 治不了也不需要治</h3>
+<p><code>singleFork</code> 解决的是「<strong>多个进程</strong>并发写同名缓存」（机制 ②）， 而机制 ③ 是「<strong>测试文件在收集窗口内被创建/修改</strong>」—— 收集进程扫到了某一刻的目录快照，之后文件才落盘。 <strong>这是时序问题，不是并发写冲突问题</strong>，加串行化一点用都没有。</p>
+<p><strong>这不是「丢了文件」，是「快照与现实不同」</strong>： 门禁报「收集快照里没有它」，真相是「收集那一刻它还没落盘」。</p>
+<h3>3.3.4 🔴 判别法（<strong>必须先做这一步，再谈并发/状态污染</strong>）</h3>
+<pre><code>① 跑前记磁盘文件集合 S_before，跑后记 S_after
+② S_before ≠ S_after（双向差集都为空才算相等）→ 机制③ → 报 WARN
+③ S_before = S_after → 才往并发写 / 状态污染 / 池配置方向查</code></pre>
+<p><strong>为什么必须双向比差集</strong>：<code>size</code> 相同不代表集合相同——删一个加一个，总数不变但集合变了。</p>
+<h3>3.3.5 ⚠️ 最阴的地方：「多跑几次」在机制③存在时恰好会<strong>掩盖</strong>问题</h3>
+<p>磁盘稳定后连跑 6 次全绿，看起来「问题消失了」， 实际是<strong>环境不再变化</strong>了，不是门禁修好了。</p>
+<blockquote><p><strong>「多跑几次就绿了」不能作为「原因已查明」的证据</strong>——</p>
+<p>它只说明「现在这一刻磁盘是稳定的」。</p></blockquote>
+<p><strong>这条直接改写了「连续跑 ≥3 次」这条判据的适用边界</strong>： 连跑 3 次是<strong>为了暴露概率性丢文件</strong>（机制 ①②）； 而机制 ③ 存在时，连跑 3 次恰好是最容易<strong>误判为「已根治」</strong>的动作。</p>
+<h3>3.3.6 与 P13 撤销的关系</h3>
+<p><strong>P13 撤销的根因是「threads 池 native 崩溃」（机制 ③的旧名，与本节的「磁盘在变」不是同一件事——名字撞了，机制不同）</strong>。 主理人第五轮信里说「真正触发条件是机制③，判别法：先看磁盘文件数跑前跑后是否变了」—— <strong>本节的判别法正是主理人指的那一条</strong>，我把它固化进了 P1 规格 §3.5。</p>
+<h3>3.3.7 处置</h3>
+<ul><li>门禁侧：缺文件若 <strong>mtime 在最近 N 分钟内</strong> → 报 <strong>WARN</strong>（不是 ERROR）+ 提示「磁盘在变，请稳定后重跑」</li><li>流程侧：<strong>不要</strong>在有人落盘的窗口跑门禁</li></ul>
+<blockquote><p><strong>⚠️ mtime 只作线索，不作判据</strong>——它<strong>绝不能</strong>成为「把 ERROR 降级成 WARN」的万能借口，</p>
+<p>否则任何人只要 <code>touch</code> 一下文件就能让真事故降级。</p>
+<p>严重级别由「<strong>磁盘是否变化</strong>」决定，mtime 只进消息文本与建议。</p>
+<p>完整判读矩阵见 P1 规格 §3.5.2。</p></blockquote>
+<hr>
+<h2>4. 收集完整性断言设计（评估主理人方案 + 补充）</h2>
+<p>主理人初步方案：</p>
+<ul><li>磁盘 <code>find</code> 出的 <code>.test.ts</code> 数 === JSON reporter 的 <code>numTotalTestSuites</code></li><li>点名关键守门测试必须在清单里</li></ul>
+<p><strong>评估：方向正确，但两个维度都不够。</strong></p>
+<table>
+<thead><tr><th>主理人的维度</th><th>能抓什么</th><th>抓不到什么</th><th>判定</th></tr></thead>
+<tbody>
+<tr><td>数量相等断言</td><td>「少了一个文件」</td><td>「少的正好是某个守门测试」——若数量恰好守恒（如丢 1 个同时新增 1 个），数量断言仍绿</td><td>⚠️ 必要但不充分</td></tr>
+<tr><td>点名守门测试</td><td>「守门测试丢了」</td><td>「<strong>新增的</strong>守门测试忘了点名」——清单是手写的，新测试默认不在清单里</td><td>⚠️ 有效但会腐烂</td></tr>
+</tbody></table>
+<p><strong>我补上的四个维度</strong>：</p>
+<ol><li><strong>集合相等而非数量相等</strong>（防"丢一个换新增一个"）</li></ol>
+<pre><code>expect(new Set(jsonFiles)).toEqual(new Set(diskFiles))   // 双向差集为空，而非仅比长度</code></pre>
+<ol><li><strong>清单从代码派生，而非手写</strong>（防清单腐烂）</li></ol>
+<p>   用命名约定（如 <code>*.guard.test.ts</code>）或读取目录 glob 生成"必须执行集合"，让人工清单只做<strong>加法断言</strong>（<code>expect(mustRun ⊆ collected)</code>），而不是维护等值全名单单。</p>
+<ol><li><strong>反例自证</strong>（仿 <code>outbound-cipher-guard.test.ts:74</code>「整行直出必被检出（反例：证明守卫不是空断言）」）</li></ol>
+<p>   这条设计<strong>已经在这个仓库里被验证有效</strong>——建议把该范式写进收集断言：故意注入一个假文件名，断言收集完整性检查会红。</p>
+<ol><li><strong>正交的第二判据：<code>Errors N error</code> 必须为 0</strong></li></ol>
+<p>   既然退出码不可信（§2.4），就把 <code>Errors</code> 计数作为独立断言。它能在EPERM 出现但未被计入 Tests 时兜住。</p>
+<p><strong>我的方案与主理人的差异</strong>：不是替代，是补齐——主理人的两条都保留，加集合相等 + 清单派生 + 反例自证 + Errors 断言。</p>
+<hr>
+<h2>5. 门禁清单（全量，含"是否在会被执行的路径上"）</h2>
+<table>
+<thead><tr><th>文件</th><th>所在目录</th><th>在 tsc include</th><th>被 npm script 调用</th><th>CI 会跑</th></tr></thead>
+<tbody>
+<tr><td><code>scripts/verify-doc-configs.ts</code></td><td><code>apps/server/scripts</code></td><td>❌ <strong>不在</strong></td><td><code>doc:check:configs</code></td><td>待接</td></tr>
+<tr><td><code>scripts/check-migration-drift.mjs</code></td><td><code>apps/server/scripts</code></td><td>❌（.mjs 且不在 include）</td><td><code>prisma:migrate:check</code></td><td>待接</td></tr>
+<tr><td><code>scripts/prisma-migrate-diff.mjs</code></td><td><code>apps/server/scripts</code></td><td>❌</td><td><code>prisma:migrate:diff</code></td><td>待接</td></tr>
+<tr><td><code>scripts/probe-enum-collect.ts</code></td><td><code>apps/server/scripts</code></td><td>❌</td><td><strong>无</strong>（探针，非门禁）</td><td>—</td></tr>
+<tr><td><code>scripts/probe-zod-group-p0.ts</code></td><td><code>apps/server/scripts</code></td><td>❌</td><td><strong>无</strong>（探针）</td><td>—</td></tr>
+<tr><td><code>scripts/enum-guard.ts</code></td><td><code>apps/admin-web/scripts</code></td><td>✅ 已修</td><td><strong>无独立 script</strong></td><td>待接 ⚠️</td></tr>
+<tr><td><code>scripts/smoke-enums.ts</code></td><td><code>apps/admin-web/scripts</code></td><td>✅ 已修</td><td><code>smoke</code></td><td>待接</td></tr>
+<tr><td><code>scripts/smoke.mjs</code> / <code>esbuild-smoke.mjs</code> / <code>check-collection.mjs</code></td><td><code>apps/admin-web/scripts</code></td><td>❌（.mjs）</td><td><code>smoke</code></td><td>待接</td></tr>
+</tbody></table>
+<p><strong>测试文件守门清单</strong>（关键 12 个，实测全部真跑）：</p>
+<table>
+<thead><tr><th>守门测试</th><th>守护对象</th><th>实测</th></tr></thead>
+<tbody>
+<tr><td><code>admin-perm-guard.test.ts</code></td><td>RBAC 门禁</td><td>✅ RUN</td></tr>
+<tr><td><code>response-discipline.test.ts</code></td><td>出参纪律</td><td>✅ RUN</td></tr>
+<tr><td><code>revenue-endpoint-contract.test.ts</code></td><td>营收端点契约</td><td>✅ RUN</td></tr>
+<tr><td><code>no-cipher-in-response.test.ts</code></td><td>密文出参</td><td>✅ RUN</td></tr>
+<tr><td><code>outbound-cipher-guard.test.ts</code></td><td>地址密文三层守卫</td><td>✅ RUN</td></tr>
+<tr><td><code>companion-income-contract.test.ts</code></td><td>提现出参（含银行卡密文）</td><td>✅ RUN（38 断言）</td></tr>
+<tr><td><code>coupon-deduct-wiring.test.ts</code></td><td>券快照 wiring</td><td>✅ RUN</td></tr>
+<tr><td><code>config-changelog-group.test.ts</code></td><td>配置域上收</td><td>✅ RUN</td></tr>
+<tr><td><code>activity.gates.test.ts</code> / <code>enum-mirror.test.ts</code></td><td>活动模块门禁</td><td>✅ RUN</td></tr>
+<tr><td><code>funnel-attribution.test.ts</code></td><td>漏斗归因</td><td>✅ RUN</td></tr>
+</tbody></table>
+<p><strong>但这张表是手写的</strong>——正是 P6/P5 说的"清单会腐烂"。建议改为命名约定派生。</p>
+<h3>5.1 踩坑记录：grep 命中 ≠ 事实所在处（本轮新增）</h3>
+<blockquote><p>主理人原话：「你 grep 到的『53』在 <code>:784</code> 的<strong>历史变更记录</strong>里——那行描述的是『表总数 45→<strong>53</strong>』这个<strong>当时的动作</strong>，是正确的历史陈述，不是当前口径声明。」</p></blockquote>
+<p><strong>本项目已连踩三次同型坑</strong>：</p>
+<table>
+<thead><tr><th>#</th><th>谁</th><th>怎么错的</th><th>真相</th><th>共性</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><strong>我</strong></td><td>grep <code>张表</code> 命中 <code>DATABASE.md:784</code> 的「45→53」→ 判「文档库表数已过期」</td><td><code>:6/:27/:42</code> <strong>三处都是 54/66</strong>，文档是对的</td><td>grep 命中 ≠ 当前口径声明</td></tr>
+<tr><td>2</td><td><strong>主理人</strong></td><td>grep <code>marketing:</code> 得 0 命中 → 判成员虚报</td><td><strong>核验时点早于成员落盘时点</strong>（mtime 问题）</td><td>grep 0 命中 ≠ 不存在</td></tr>
+<tr><td>3</td><td><strong>我</strong></td><td>grep <code>.catch</code> 只搜 <code>*.test.ts</code> 得 0 命中 → 写「<strong>全量搜</strong>…0 命中」</td><td>全仓 <strong>60+ 处</strong> <code>.catch()</code></td><td>搜索范围 ≠ 声称范围</td></tr>
+</tbody></table>
+<p><strong>判别规则（以后 grep 数字/关键词前必做）</strong>：</p>
+<table>
+<thead><tr><th>语境</th><th>是否当前口径</th><th>处理</th></tr></thead>
+<tbody>
+<tr><td>表格首行 / 「当前为 X」/ 章节标题里的数字</td><td>✅ 是</td><td>采信</td></tr>
+<tr><td>「变更记录 / v1.5 起 / 45→53」里的数字</td><td>❌ 历史动作</td><td><strong>不采信</strong>，去找首行</td></tr>
+<tr><td>注释里引用的数字</td><td>❌</td><td>不采信</td></tr>
+</tbody></table>
+<p><strong>六步法</strong>：① grep 命中 → ② 读该行完整语境（前 3 后 3） → ③ 判断是「当前口径」还是「历史/注释/示例」 → ④ 若历史 → 去找真正的当前口径 → ⑤ 找不到 → 这才是真缺口 → ⑥ 结论写清「我核的是哪一处」</p>
+<blockquote><p><strong>grep 是「存在性」工具，不是「语义定位」工具。搜索范围 + 语境判定，两者缺一不可。</strong></p></blockquote>
+<h4>5.1.1 「上下文性质」判别法（主理人第五轮给定，我第四轮踩过）</h4>
+<p>主理人第五轮给的一条判别法，我第四轮<strong>没做到</strong>，导致报了假阳性：</p>
+<blockquote><p><strong>grep 命中 ≠ 事实所在处</strong>。</p>
+<p>判别法 = 读命中行<strong>上下各 5 行</strong>，看段落性质是「事实」还是「变更记录/历史沿革」。</p></blockquote>
+<p><strong>我第四轮的错</strong>（P4 假阳性，已撤销）： 我用 <code>grep -n "张表" docs/DATABASE.md</code> 查库表数，命中 <code>DATABASE.md:784</code> 的「45→<strong>53</strong>」—— 那行描述的是「表总数 45→53」这个<strong>当时的动作</strong>，是<strong>正确的历史陈述</strong>，不是当前口径声明。 而 <code>:6</code> / <code>:27</code> / <code>:42</code> <strong>三处都是 54 张 / 66 枚举</strong>——<strong>文档是对的，是我的判读方法错了。</strong></p>
+<p><strong>为什么「5 行」这个数字是主理人给的、不是我想出来的</strong>： 5 行不够就往上翻到最近的<strong>标题</strong>—— <strong>标题是性质的判据</strong>：在「变更记录」「历史」「附录」「修订历史」标题下的数字， 一律不是当前口径。这条比「前 3 后 3」更可操作，因为它给了<strong>终止条件</strong>（翻到标题为止）。</p>
+<p><strong>报告层的写法（与「未发现问题」三段式同源）</strong>：</p>
+<blockquote><p>「我核的是 <code>docs/DATABASE.md:6</code> 的<strong>概览声明</strong>（当前口径），</p>
+<p>不是 <code>:784</code> 的<strong>变更记录</strong>（历史）」</p></blockquote>
+<h4>5.1.2 「<code>node --check</code> 通过」≠「代码被执行了」（主理人第五轮亲历，第四轮补）</h4>
+<p><strong>事故原委</strong>：主理人写 <code>scripts/verify-all.cjs</code> 时文件头 <code>/**</code> 忘闭合 <code>*/</code>， 一路吞到 72 行，把三行 <code>const</code> 声明全吞进注释 → 顶层变量全 <code>undefined</code> → <strong><code>node --check</code> 通过</strong>（被吞代码语法上完全合法）→ <strong>但代码根本没执行</strong>。</p>
+<table>
+<thead><tr><th>手段</th><th>能查到什么</th><th>查不到什么</th></tr></thead>
+<tbody>
+<tr><td><code>node --check</code></td><td>语法错误</td><td><strong>注释未闭合吞代码</strong>、变量未声明、逻辑错</td></tr>
+<tr><td><code>tsc --noEmit</code></td><td>类型错误 + 未使用变量</td><td>运行时才暴露的路径</td></tr>
+<tr><td><strong>跑一次并看输出</strong></td><td><strong>「这段代码到底执行了没有」</strong></td><td>—</td></tr>
+</tbody></table>
+<blockquote><p><strong>可靠判据是「跑一次并看输出」，不是「静态检查通过」。</strong></p></blockquote>
+<p><strong>🔴 对本报告的直接约束（这条最要紧，也是本轮新增的自我约束）</strong>：</p>
+<blockquote><p>写「已验证」「未发现问题」时，<strong>验证手段本身可能失效而它看起来有效</strong>。</p>
+<p>所以每条「已验证」都必须能回答：<strong>① 我跑的是什么命令？② 输出是什么？</strong></p>
+<p>（具体到参数与工作目录，不是「通过了」三个字）</p></blockquote>
+<p><strong>为什么这对门禁审计特别致命</strong>：门禁审计的全部价值建立在「门禁真的会红」这个假设上。 若门禁脚本因一个未闭合注释而<strong>从未真正执行过断言</strong>，那么它一直报「全绿」、 退出码是 0、CI 一直是绿的——<strong>而它一个断言都没跑过</strong>。 这是「<strong>门禁在检查范围外</strong>」（线索 1）<strong>最隐蔽的一种形态</strong>： <strong>门禁文件存在、可运行、退出码正确</strong>。</p>
+<p><strong>最便宜的存活判据</strong>：要求门禁脚本<strong>至少打印一行自己的结论</strong> （如「检查了 N 个包，ERROR 0，WARN 2」），聚合入口据此判断「它真的跑过了」。 <strong>「没有输出」=「没跑」</strong>。</p>
+<p><strong>同源三故障</strong>（主理人已写入 <code>D:/wiki/Learning/insight-assert-right-display-wrong-2026-10-22.md</code>）：</p>
+<table>
+<thead><tr><th>#</th><th>故障</th><th>对应本报告的哪一节</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><strong>断言对、显示错</strong></td><td>P1 规格 §3 维度⑤（显示层与断言层同源）</td></tr>
+<tr><td>2</td><td><strong>注释未闭合吞代码</strong></td><td>本节 §5.1.2</td></tr>
+<tr><td>3</td><td><strong>两态当三态</strong></td><td>P1 规格 §6.2.1（三态守门）</td></tr>
+</tbody></table>
+<p><strong>三条的共同结构</strong>：</p>
+<blockquote><p><strong>「看起来对」与「实际上对」之间没有可见的差别</strong>——</p>
+<p>所以必须有一层<strong>主动去制造可见差别</strong>的机制（自证 / 显示层同源 / 三态区分），</p>
+<p>而不能靠「读起来没问题」。</p></blockquote>
+<p><strong>我本轮的自查</strong>：本报告所有「已核」条目均附了具体命令与行号； 凡未实跑而只读码得出的结论，一律写成「读码结论」并注明未实测 （如 §3.3.3 关于 <code>singleFork</code> 为何治不了机制③，属<strong>推理</strong>而非实测）。</p>
+<hr>
+<hr>
+<h2>5.2 线索 9 · 守门测试「单跑红、全跑绿」专项</h2>
+<blockquote><p>主理人原话：「我怀疑有些成员报的『已核过』其实是在一个没真正运行的测试上做的。」</p></blockquote>
+<h3>5.2.1 守门测试是否真在收集清单里</h3>
+<p><strong>方法</strong>：取 <code>check-test-collection.ts</code> 的 <code>GUARD_TESTS</code>（12 条）× JSON reporter 的 <code>testResults[].name</code>，双向差集。</p>
+<p><strong>实测（server，磁盘 35）</strong>：<strong>12/12 全部被执行，无一遗漏</strong> ✅</p>
+<h3>5.2.2 「单跑红、全跑绿」检测</h3>
+<p><strong>方法</strong>：12 个守门测试逐个<strong>单跑</strong>（<code>vitest run <file></code>），与全量跑结果对比。</p>
+<p><strong>实测结果</strong>：</p>
+<table>
+<thead><tr><th>守门测试</th><th>单跑 files</th><th>单跑 tests</th><th>单跑 failed</th><th>success</th></tr></thead>
+<tbody>
+<tr><td><code>response-discipline.test.ts</code></td><td>1</td><td>5</td><td>0</td><td>✅</td></tr>
+<tr><td><code>admin-perm-guard.test.ts</code></td><td>1</td><td>18</td><td>0</td><td>✅</td></tr>
+<tr><td><code>outbound-cipher-guard.test.ts</code></td><td>1</td><td>24</td><td>0</td><td>✅</td></tr>
+<tr><td><code>revenue-endpoint-contract.test.ts</code></td><td>1</td><td>28</td><td>0</td><td>✅</td></tr>
+<tr><td><code>companion-income-contract.test.ts</code></td><td>1</td><td>38</td><td>0</td><td>✅</td></tr>
+<tr><td><code>coupon-deduct-wiring.test.ts</code></td><td>1</td><td>20</td><td>0</td><td>✅</td></tr>
+<tr><td><code>config-changelog-group.test.ts</code></td><td>1</td><td>18</td><td>0</td><td>✅</td></tr>
+<tr><td><code>config-changelog-fields.test.ts</code></td><td>1</td><td>13</td><td>0</td><td>✅</td></tr>
+<tr><td><code>coupon-deduct.test.ts</code></td><td>1</td><td>22</td><td>0</td><td>✅</td></tr>
+<tr><td><code>revenue.test.ts</code></td><td>1</td><td>40</td><td>0</td><td>✅</td></tr>
+<tr><td><code>companion-income.test.ts</code></td><td>1</td><td>32</td><td>0</td><td>✅</td></tr>
+<tr><td><code>rating-precision.test.ts</code></td><td>1</td><td>11</td><td>0</td><td>✅</td></tr>
+</tbody></table>
+<p><strong>12/12 单跑全绿，与全量跑一致 → 本轮未发现「单跑红、全跑绿」的实例。</strong></p>
+<h3>5.2.3 「复核过但没问题的 14 项」是否都在收集清单里</h3>
+<table>
+<thead><tr><th>#</th><th>§8 的项</th><th>对应测试/脚本</th><th>在收集清单？</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>prisma:migrate:diff</td><td><code>scripts/prisma-migrate-diff.mjs</code>（<strong>非 vitest 测试</strong>）</td><td>N/A（另一条门禁路径）</td></tr>
+<tr><td>2</td><td>catch 型假通过</td><td><strong>无对应测试文件</strong></td><td>❌ <strong>无门禁</strong></td></tr>
+<tr><td>3</td><td>券 resume 防御</td><td><code>domain/coupon.test.ts</code></td><td>✅</td></tr>
+<tr><td>4</td><td>券状态不回退 DRAFT</td><td><code>domain/coupon.test.ts:65</code></td><td>✅</td></tr>
+<tr><td>5</td><td>提现密文</td><td><code>middlewares/companion-income-contract.test.ts</code></td><td>✅</td></tr>
+<tr><td>6</td><td>changelog 字段名</td><td><code>middlewares/config-changelog-fields.test.ts</code></td><td>✅</td></tr>
+<tr><td>7</td><td>配置域 6 组 28 键</td><td><code>middlewares/config-changelog-group.test.ts</code> + <code>scripts/verify-doc-configs.ts</code></td><td>✅</td></tr>
+<tr><td>8</td><td>活动模块 8 张表</td><td><code>modules/activity/enum-mirror.test.ts</code></td><td>✅</td></tr>
+<tr><td>9</td><td>密文守卫三层</td><td><code>middlewares/outbound-cipher-guard.test.ts</code></td><td>✅</td></tr>
+<tr><td>10</td><td>admin-web 门禁在 tsc</td><td><code>admin-web/scripts/check-collection.mjs:197</code></td><td>✅</td></tr>
+<tr><td>11</td><td>券快照回填幂等</td><td><code>scripts/check-coupon-backfill.ts</code>（<strong>非 vitest 测试</strong>）</td><td>N/A（另一条门禁路径）</td></tr>
+<tr><td>12</td><td>置信度口径</td><td><code>domain/activity.test.ts</code></td><td>✅</td></tr>
+<tr><td>13</td><td>forks 在 companion 有效</td><td><code>miniapp-companion/vitest.config.ts</code>（<strong>非测试</strong>）</td><td>N/A</td></tr>
+<tr><td>14</td><td>server 测试稳定性</td><td>—</td><td>❌ <strong>无门禁</strong>（且本轮已降级，见 P13）</td></tr>
+</tbody></table>
+<p><strong>结论</strong>：</p>
+<blockquote><p><strong>10 项有测试守住</strong>（本轮实测这 10 个文件<strong>确实在执行清单里</strong>）；</p>
+<p><strong>4 项是脚本/配置/迁移 SQL</strong>，不在 vitest 收集范围 —— 它们由 npm script 驱动，<strong>属于另一条门禁路径</strong>（而 P3 聚合入口缺失 → 这条路径当前无自动执行保障）；</p>
+<p><strong>2 项无任何门禁</strong>：catch 型假通过（§2 / P11）、server 测试稳定性（P13 —— 第四轮已撤销该降级，根因是池不是测试）。</p></blockquote>
+<h3>5.2.4 「不覆盖」</h3>
+<ul><li>依赖<strong>跨文件 <code>beforeAll</code></strong> 的顺序依赖（我的单跑会跳过 <code>beforeAll</code>，反而"更干净"，可能掩盖问题）</li><li>依赖<strong>全局 mock 状态 / 模块单例污染</strong>的污染</li><li><strong>这个检测必须进 CI</strong>：它的价值恰恰在于把"人工单跑"和"CI 全跑"的环境差异统一掉 —— 人工单跑不能替代自动化单跑</li></ul>
+<hr>
+<h2>5.3 线索 10 · 「报告不覆盖什么」要逐条核，而不是声明</h2>
+<blockquote><p>完整版见独立文档 <strong><a href="./GATE-AUDIT-L10-SELFCHECK.md"><code>GATE-AUDIT-L10-SELFCHECK.md</code></a></strong>。此处给结论摘要。</p></blockquote>
+<h3>5.3.1 逐条复核结果</h3>
+<table>
+<thead><tr><th>#</th><th>上一轮的结论</th><th>本轮复核</th><th>判定</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>prisma:migrate:diff</code> 同文件自比已修</td><td>重核</td><td>✅ 成立（证据更强）</td></tr>
+<tr><td>2</td><td><code>.catch(e=>e)</code> 型假通过 0 命中</td><td>重核 + 扩查</td><td>⚠️ <strong>措辞不准</strong> → <strong>P11</strong></td></tr>
+<tr><td>3</td><td>券 <code>resume</code> 绕过 <code>validatePublish</code> 已防御</td><td>重核</td><td>⚠️ <strong>路径引用错</strong>（<code>domain/</code> 非 <code>modules/marketing/</code>）；结论成立</td></tr>
+<tr><td>4</td><td>券状态回退到 DRAFT 不存在</td><td>重核</td><td>✅ 成立（+ 补「未知状态也拒」）</td></tr>
+<tr><td>5</td><td>提现出参密文已修 + 守门覆盖 routes 文件</td><td>重核</td><td>✅ 成立（注释记录了初版漏扫点）</td></tr>
+<tr><td>6</td><td>changelog 前后端字段名逐字对齐</td><td>重核三处</td><td>✅ 成立</td></tr>
+<tr><td>7</td><td>配置域 6 组 28 键双向差集为空</td><td><strong>实跑</strong>（非 grep）</td><td>✅ 成立</td></tr>
+<tr><td>8</td><td>活动模块 8 张表全在 schema</td><td>重核</td><td>✅ 成立</td></tr>
+<tr><td>9</td><td>密文守卫三层 + 反例自证</td><td>重核</td><td>✅ 成立</td></tr>
+<tr><td>10</td><td>admin-web 门禁在 tsc 范围</td><td>重核</td><td>✅ 成立</td></tr>
+<tr><td>11</td><td>券快照回填迁移幂等</td><td>重核</td><td>✅ 成立</td></tr>
+<tr><td>12</td><td>置信度口径</td><td>重核</td><td>✅ 成立（+ 补「单一口径源」）</td></tr>
+<tr><td>13</td><td><code>--pool=forks</code> 在 companion 有效</td><td>重核 + 扩查</td><td>⚠️ <strong>根因归错</strong>（是配置层 <code>singleFork</code>，非 env 重定向）</td></tr>
+<tr><td>14</td><td>server 测试稳定性</td><td>重核</td><td>❌ <strong>第三轮降级 → 第四轮撤销</strong>（根因是 threads 池崩溃，非测试）→ <strong>P13</strong></td></tr>
+<tr><td>15</td><td>契约健康感知端点 4 处过期</td><td>方向核</td><td>❌ <strong>方向反了 + 严重性低估</strong> → <strong>P10</strong></td></tr>
+<tr><td>16</td><td>券 8 个错误码已入表</td><td>核「前端能否处理」</td><td>⚠️ <strong>入表成立；「前端能处理」有条件成立</strong>（见下）</td></tr>
+<tr><td>17</td><td>P4 文档表数 53/64</td><td>主理人已核为误报</td><td>❌ <strong>撤销</strong>（→ §5.1 踩坑记录）</td></tr>
+</tbody></table>
+<p><strong>净结果</strong>：14 项中 <strong>10 项成立</strong>、<strong>3 项措辞/引用需修正</strong>、<strong>1 项需降级</strong>；2 项方向被点出后升级为新发现（P10/P11），1 项撤销。</p>
+<h3>5.3.2 主理人点名的第 1 项：健康感知契约 —— <strong>方向反了，且严重性被严重低估</strong></h3>
+<blockquote><p>主理人：「如果前端已经在用新字段而契约没跟上，那问题方向可能反了」</p></blockquote>
+<p><strong>核到的事实</strong>：</p>
+<ul><li><strong>前端确实在消费</strong>：<code>HealthBoardPage.tsx</code> 用 <code>dataIndex: 'elderNameMasked' / 'explainCode' / 'sparkline' / 'deviceStatus'</code>，<code>r.freshnessSec</code>（:449 / :621）</li><li><strong>契约 §13.6 elders 端点没有字段级出参表</strong>（<code>grep "elderNameMasked|freshnessSec|explainLabel|partition|needsAttention|nickname" docs/API-CONTRACT.md</code> → 0 命中，只有散文描述）</li><li><strong>服务端 / 前端 / mock 三方各写各的</strong> → 17 处字段名不对齐 + 1 处单位不同 → <strong>P10</strong></li></ul>
+<p><strong>结论</strong>：契约不是"过期"，是<strong>从未有字段级定义</strong>。根因是<strong>结构性缺口</strong>，不是笔误。</p>
+<h3>5.3.3 主理人点名的第 2 项：券错误码 —— <strong>入表成立，但「前端能正确处理」有条件成立</strong></h3>
+<p><strong>三个核到的事实</strong>：</p>
+<p><strong>① 码表实为 7 个，不是 8 个</strong></p>
+<pre><code>$ grep -n "1920[1-8]" packages/shared/src/error-codes.ts
+  175-181: 19201 19202 19203 19204 19205 19206 19207
+$ grep -rn "19208" . --include="*.ts" --include="*.tsx" --include="*.md" | grep -v node_modules
+  → 0 命中（全仓无 19208）</code></pre>
+<blockquote><p>主理人原信写的「<code>error-codes.ts</code> 有 19201-19208」——<strong>19208 不存在</strong>。不影响结论，引用数字要改。</p></blockquote>
+<p><strong>② 映棠的 <code>enum-guard.ts</code> 断言的不是错误码</strong></p>
+<pre><code>$ grep -rn "ERROR_CODES" apps/admin-web/scripts/   → 0 命中</code></pre>
+<p><code>enum-guard.ts</code> 管的是 <code>status/type/level/...</code> 这类<strong>枚举域字段的取值</strong>（<code>ENUM_FIELD_NAME</code> 正则），<strong>ERROR_CODES 不在这个机制里</strong>。 → <strong>主理人转述的那条断言，映棠没做。</strong></p>
+<p><strong>③ 但前端的错误码处理是「表驱动」的，本来就不需要逐码断言</strong></p>
+<pre><code>// apps/admin-web/src/api/request.ts:115-117
+apiErr.message = ERROR_CODES[apiErr.code]?.message ?? '请求失败';
+// packages/shared/src/error-codes.ts:240-242
+export function getErrorDef(code) { return ERROR_CODES[code] ?? ERROR_CODES[10009]; }</code></pre>
+<p>→ 「每个 key 都能找到处理」是<strong>结构性成立</strong>的，<strong>不构成一种风险</strong>。</p>
+<p><strong>真正的风险在两处</strong>：</p>
+<table>
+<thead><tr><th>风险</th><th>实测</th><th>建议</th></tr></thead>
+<tbody>
+<tr><td><strong>不在表里的码</strong></td><td>✅ <strong>差集为 0</strong>（全仓 mock/服务端用码 ⊆ shared 表）—— 当前通过</td><td>做成门禁，防将来自造码</td></tr>
+<tr><td><strong>契约速查表覆盖不全</strong></td><td>契约只提 <strong>79</strong> 个码，shared 表有 <strong>155</strong> 个 → <strong>76 个查不到</strong>（11008/12003/13003/.../19201/20001/90005）</td><td>① 补全 ② 或在契约里<strong>明确写「本表为代表例，完整表见 <code>packages/shared/src/error-codes.ts</code>」</strong>（现在的写法像全量）</td></tr>
+</tbody></table>
+<p><strong>建议补的门禁</strong>（不是「每个 key 都能找到处理」）：</p>
+<pre><code>// ① mock/服务端用到的码 ⊆ shared 表（防自造码）
+// ② shared 表每个码的 message 非空（防空文案）
+// ③ 契约速查表覆盖的码 ⊆ shared 表（防契约写了表里没有的码）
+// ④ 契约标注「代表例」而非「全量」（文档层）</code></pre>
+<h3>5.3.4 「未发现问题」的正确表述（本轮起全报告统一）</h3>
+<pre><code>✅ 本轮在 &lt;具体维度&gt; 未发现实例。
+   证据：&lt;可复现命令 + 实际输出&gt;
+   不覆盖：① &lt;具体盲区&gt; ② &lt;具体盲区&gt; ③ &lt;具体盲区&gt;</code></pre>
+<p><strong>❌ 反例</strong>：「吞异常型假通过 —— 不存在」（既断言"没问题"，又无证据链，又无边界）</p>
+<p><strong>本轮四条线索的重新表述</strong>（完整版见 L10 文档 §6）：</p>
+<table>
+<thead><tr><th>线索</th><th>本轮表述</th></tr></thead>
+<tbody>
+<tr><td>2 · 吞异常</td><td>本轮在<strong>测试代码</strong>中未发现实例。<strong>不覆盖</strong>：① 生产代码 60+ 处 <code>.catch()</code>（已核 8 处关键路径，2 处建议改进）② Promise 链中间层 <code>await</code> 缺失 ③ 跨进程错误传播</td></tr>
+<tr><td>3 · 恒真命题</td><td>本轮逐例推演未发现实例。<strong>不覆盖</strong>：① 动态生成的断言 ② 依赖环境变量分支的断言 ③ 依赖执行顺序的断言</td></tr>
+<tr><td>8 · 不可逆性幻觉</td><td>本轮在 <code>coupon</code> 域未发现实例。<strong>不覆盖</strong>：① 其余 4 个状态机的同目标态路径（P6 仍成立）② 数据库唯一约束与状态机的一致性 ③ 并发下的状态跃迁</td></tr>
+<tr><td>9 · 单跑红全跑绿</td><td>本轮 12 个守门测试逐个单跑，与全量一致 → 未发现实例。<strong>不覆盖</strong>：① 依赖跨文件 <code>beforeAll</code> 的顺序依赖 ② 全局单例污染</td></tr>
+</tbody></table>
+<hr>
+<h2>6. 本轮 7 项新增对象复核</h2>
+<table>
+<thead><tr><th>#</th><th>对象</th><th>结论</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>券核销双分支（<code>coupon-deduct.ts</code> + <code>order.service.ts:248-266</code>）</td><td>✅ <strong>质量优秀</strong>。双分支 <code>SNAPSHOT</code>/<code>FALLBACK_TEMPLATE</code> 有明确 <code>valueSource</code> 供断言；回退分支<strong>强制结构化日志</strong>（userCouponId/couponId/type，可grep）；注释写清"没有它就查不出还剩多少券没回填"。测试 6 处断言覆盖两分支。</td></tr>
+<tr><td>2</td><td>存量券快照回填迁移</td><td>✅ <strong>正确且有上线闸门</strong>。SQL 用 <code>JOIN ... WHERE value_snapshot IS NULL</code>（天然幂等），注释含<strong>上线前必须验证的 SQL</strong>（<code>COUNT(*) WHERE value_snapshot IS NULL</code> 必须为 0），并正确处理 <code>coupons.value IS NULL</code> 保持 NULL 而非填 0（"快照缺失"≠"面额为0"）。</td></tr>
+<tr><td>3</td><td>地址密文出参守卫（三层）</td><td>✅ <strong>三层齐备</strong>。<code>SENSITIVE_KEY_SUFFIXES=['_cipher','_hmac']</code> → <code>stripCipherKeys</code> → <code>app.use(outboundCipherGuard)</code> 挂在业务路由前（新接口零成本受保护）。测试含<strong>反例自证</strong>（<code>:74</code>「整行直出必被检出」）与 Date/Buffer/超深结构不误报。</td></tr>
+<tr><td>4</td><td>配置域分组上收（shared 单一权威）</td><td>✅ <strong>已收干净</strong>。实测 6 组 28 键，<code>doc:check:configs</code> 段 6.1 双向差集为空；zod 从 <code>CONFIG_DOMAIN_GROUPS</code> 派生（加组自动生效）；前端已 re-export shared（双写面消除）；mock 的 10 处手写 configKey 已核实为"变更历史记录"而非定义。✅ <strong>changelog 出参已逐字对齐</strong>：服务端 <code>beforeValue/afterValue/operator/changedAt</code> = 前端 <code>CommissionConfigPage.tsx:124-128</code> = 契约 §5.7.7.1。</td></tr>
+<tr><td>5</td><td><code>community_code</code> 三处一致</td><td>✅ 一致。schema <code>@unique @db.VarChar(32)</code>、seed 按 code upsert、DATABASE.md §13.6 逐字对齐（含 <code>GZ_TH_HUAYING</code> 示例）。<strong>注</strong>：schema 表数已增至 54（见 P4）。</td></tr>
+<tr><td>6</td><td>错误码 155 码段 + §2 速查表订正</td><td>✅ <strong>一致</strong>。实测 <code>error-codes.ts</code> <strong>155 个码</strong>；契约 §2 已含 22xxx/23xxx/24xxx 三行且代表码与 shared 一致（22001/22002/22005/22006、23001/23002/23004/23005、24001/24002/24003/24004/24006/24007）。</td></tr>
+<tr><td>7</td><td>契约 §5.7.7 / §5.7.7.1</td><td>✅ <strong>优秀</strong>。九字段逐字列出；<code>changedAt ≠ createdAt</code> 的语义差异专门用引用块解释（"落库列名答'审计何时写入'，出参名答'配置何时被改'"）；<code>group</code> 明确"不接受英文 key"；六组 28 键给出严格划分。</td></tr>
+</tbody></table>
+<hr>
+<h2>7. 「假绿缝隙」可复用检查清单</h2>
+<blockquote><p>这四类是本项目实际踩过的。建议写进 wiki，所有项目通用。</p></blockquote>
+<h3>A. 机制静默失效（Mechanism Silently Disabled）</h3>
+<ul><li>[ ] 每个测试文件<strong>都真的被执行</strong>吗？（磁盘数 === 收集数，且<strong>集合相等</strong>非仅数量）</li><li>[ ] 关键守门测试<strong>在清单里</strong>吗？清单是手写的还是从命名约定派生的？</li><li>[ ] 守门脚本<strong>在 tsc/构建的 include 范围</strong>内吗？（<code>.ts</code> 与 <code>.mjs</code> 分开确认）</li><li>[ ] 聚合入口存在吗？CI 只调它，还是让人记得逐个跑？</li><li>[ ] 池配置（<code>pool</code>/<code>threads</code>/<code>forks</code>）<strong>固化在配置文件</strong>里，还是靠命令行传？</li></ul>
+<h3>B. 恒真命题（Tautology）</h3>
+<ul><li>[ ] 有「同一输入自比」的断言吗？（如 <code>--from-x X --to-x X</code>）</li><li>[ ] 把被检查对象换成任意垃圾值，断言还成立吗？（反例自证）</li><li>[ ] 断言查的字段 == 被破坏的字段吗？（防"破坏 A、断言 B"）</li><li>[ ] 断言的落点与破坏落点在<strong>同一条数据流</strong>上吗？</li></ul>
+<h3>C. 吞异常（Swallowed Exception）</h3>
+<ul><li>[ ] 有 <code>.catch(e => e)</code> / <code>.catch(() => {})</code> 后仍 <code>expect(true)</code> 吗？</li><li>[ ] <code>try { 目标(); expect.unreachable() } catch { 断言 }</code> 范式用对了吗？</li><li>[ ] 错误被吞后，<strong>退出码与输出</strong>还能暴露失败吗？</li></ul>
+<h3>D. 不可逆性幻觉（Irreversibility Illusion）</h3>
+<ul><li>[ ] 有哪些状态机的两条路径指向<strong>同一目标态</strong>？准入条件一致吗？</li><li>[ ] 「已投放/已发布/已生效」能否被绕过校验直接到达？</li><li>[ ] 终态是否真的不可逆？（<code>ENDED</code> 与 <code>PAUSED</code> 必须分开——本项目已做对）</li></ul>
+<h3>E. 文档与磁盘（Doc vs Disk）</h3>
+<ul><li>[ ] 文档声明的表数/枚举数/码数与磁盘一致吗？</li><li>[ ] 文档说"刻意未落"的东西，<strong>现在落了吗</strong>？（有列无逻辑 /迁移已落但文档未更新）</li><li>[ ] mock 的字段名有自动交叉断言吗？（号段镜像管不到字段名）</li><li>[ ] <strong>grep 命中的数字，是「当前口径声明」还是「历史变更记录 / 注释 / 示例」？</strong>（§5.1 六步法）</li><li>[ ] <strong>你的 grep 范围 == 你在结论里声称的范围吗？</strong>（"全量搜"要有命令为证）</li><li>[ ] mock 与真后端的<strong>字段名 + 单位</strong>一致吗？（<code>freshnessSec</code> vs <code>freshnessMinutes</code> 这类，编译期查不出来）</li><li>[ ] 契约给了<strong>字段级出参表</strong>吗？还是只有散文描述？（散文 → 三方各写各的）</li></ul>
+<h3>F. 报告自审（Report Self-Check）</h3>
+<ul><li>[ ] 每个「未发现问题」都写成了「本轮在 N 个维度未发现实例」？</li><li>[ ] 每条都附了「<strong>不覆盖</strong>」清单，且清单<strong>具体到可验证</strong>（不能写「其他情况」）？</li><li>[ ] 自己的<strong>假阳性</strong>写进正文了吗？（本项目已自曝 3 个）</li><li>[ ] 别人的「已核过」都映射到<strong>具体测试文件</strong>，且核过它<strong>在收集清单里</strong>？</li><li>[ ] 每个守门测试都做过<strong>单跑 vs 全跑</strong>对比？（§5.2）</li><li>[ ] 「这条结论如果是错的，会以什么形式暴露？」——<strong>想不出来 → 说明这条结论不可信</strong></li></ul>
+<h3>G. 丢文件 / 崩溃的机制判别（第四轮补全三种）</h3>
+<ul><li>[ ] 收集数 &lt; 磁盘数时，<strong>清空 vitest 缓存后重跑</strong>：</li><li>恢复全收集 → <strong>机制 2</strong>（并发写同名缓存互相覆盖）</li><li>仍不收集 → <strong>机制 1</strong>（EPERM 写盘失败）</li><li>[ ] <strong>退出码 ≥ 128 或 Windows 异常码（如 3221225477）→ 机制 3（native 崩溃）</strong>，不是丢文件</li><li>[ ] <strong>三种机制表象几乎相同</strong> → 所以<strong>常驻断言是唯一防线</strong></li><li>[ ] 判别时<strong>每次跑前重取磁盘基线</strong>（实测踩到：脚本启动时 34 个，跑到一半队友新增 1 个 → 35）</li><li>[ ] 用了<strong>「只增不减」基线</strong>（存 <code>.tmp/</code>，不硬编码期望值）</li><li>[ ] <code>numTotalTestSuites</code> <strong>不是文件数</strong>（实测 195 vs 35）—— 文件数取 <code>testResults.length</code></li><li>[ ] <strong>「不传 pool」≠ 默认池</strong>（config 里的 <code>pool</code> 会覆盖 CLI 默认）—— 断言「某配置更稳」前先确认它真生效了</li><li>[ ] <strong>「有失败」是测试失败还是环境失败？</strong> —— 换池 A/B 对照，只在某个池下失败 = 环境问题</li><li>[ ] <strong>EXIT=1 不代表有问题，EXIT=0 也不代表健康</strong>（实测 threads 池下 EXIT=1 但收集齐、零失败、stdout 无错误输出）</li></ul>
+<hr>
+<h2>8. 复核过但确认没问题的项</h2>
+<blockquote><p>避免下一个人重复怀疑——这些都实测过且正确。</p></blockquote>
+<table>
+<thead><tr><th>项</th><th>结论</th></tr></thead>
+<tbody>
+<tr><td><code>prisma:migrate:diff</code> 同文件自比</td><td>✅ 已修。<code>scripts/*.mjs:5</code> 仅存注释（记录旧写法），脚本已改真迁移链比对；<code>migrations/</code> 实存 4 个迁移</td></tr>
+<tr><td><code>.catch(e=>e)</code> 型假通过</td><td>✅ 0 命中。5 处 catch 全为正确范式</td></tr>
+<tr><td>券 <code>resume</code> 绕过 <code>validatePublish</code></td><td>✅ 已防御。<code>validateResume</code> 独立实现不复用 <code>canTransition</code>；<code>coupon.test.ts:259</code> 有断言</td></tr>
+<tr><td>券状态回退到 DRAFT</td><td>✅ 不存在回退路径，有全量断言（<code>:65</code>）</td></tr>
+<tr><td>提现出参银行卡密文</td><td>✅ 已修 + 守门覆盖 <strong>routes 文件</strong>（曾漏扫点，<code>companion-income-contract.test.ts:119</code>）</td></tr>
+<tr><td>changelog 前后端字段名</td><td>✅ <strong>逐字对齐</strong>（服务端 :192-201 = 前端 :124-128 = 契约 §5.7.7.1）</td></tr>
+<tr><td>配置域 6 组 28 键</td><td>✅ 与 <code>SYSTEM_CONFIG_DEFAULTS</code> 双向差集为空</td></tr>
+<tr><td>活动模块 8 张表</td><td>✅ 全在 schema（下划线命名，与 §13.8 一致）</td></tr>
+<tr><td>密文守卫三层</td><td>✅ 齐备，且含反例自证</td></tr>
+<tr><td>admin-web 门禁在 tsc 范围</td><td>✅ 已修，且带设计说明注释（<code>tsconfig.json</code> include含 <code>scripts/**/*.ts</code>）</td></tr>
+<tr><td>券快照回填迁移幂等性</td><td>✅ <code>WHERE value_snapshot IS NULL</code> 天然幂等；含上线验证 SQL</td></tr>
+<tr><td>置信度 <code>computeConfidence</code> 口径</td><td>✅ 与 §13.3 逐档规则一致，含 <code>channelCount=2 & crossVerified=false</code> 边界（0.85×衰减因子、不乘 1.3）</td></tr>
+<tr><td><code>--pool=forks</code> 在 companion 有效</td><td>✅ 实测 3 次稳定 2/2（默认池则1–2 随机波动）。⚠️ <strong>根因更正</strong>：稳定源是<strong>配置层固化的 <code>pool: 'forks' + singleFork: true</code></strong>，不是 <code>run-vitest.js</code> 的 env 重定向 —— 裸 <code>npx vitest run</code>（不走 env）同样 3 次稳定 2/2</td></tr>
+<tr><td><del>server 测试稳定性</del></td><td>⚠️ <strong>第三轮降级、第四轮撤销（P13）</strong>：根因是 <strong>threads 池 native 崩溃</strong>（机制 3），不是测试本身。<strong>配置层四件套下 14/14 连跑全绿零崩溃</strong>。教训：「池不稳定」与「测试不稳定」都表现为「有失败」，必须看失败发生在哪个阶段</td></tr>
+<tr><td>券错误码「8 个」已入表</td><td>⚠️ 实为 <strong>7 个</strong>（19201–19207），<strong>19208 全仓 0 命中</strong>。入表成立；且全仓 mock 用码 ⊆ shared 表（差集 0）。但<strong>契约速查表只覆盖 79/155</strong></td></tr>
+</tbody></table>
+<hr>
+<h2>9. 我不确定 / 无法核验的（诚实边界）</h2>
+<ol><li><strong>CI 未建</strong>——所有"CI 会跑"列只能标"待接"，无法验证 CI 配置本身是否正确。</li><li><strong>EPERM 的完整触发条件</strong>未查明：能观察到它发生（在 companion 默认池稳定复现），但<strong>未能确定 server 为何当前不触发</strong>（同机同版本，差异可能是并发数、文件数或 .vitest-tmp 残留）。因此<strong>不能断言 <code>pool=forks</code> 能根治</strong>，只能说"实测有效"。</li></ol>
+<p>   <strong>本轮补充（第三轮）</strong>：主理人给出了判别法（清缓存后重跑 → 恢复=机制 2 / 仍不恢复=机制 1）与两种机制的对照表。本轮在 server 上实测：清缓存后 <code>--pool=forks</code> 连续 3 次 <strong>35/35/35 稳定，未复现丢失</strong>。    → <strong>结论：机制 1 / 机制 2 在 server 包上均未触发</strong>，当前由<strong>配置层</strong> <code>pool: 'forks' + singleFork: true</code> 稳定。    → <strong>但我仍未复现主理人观测到的 31/32/33 波动</strong>，故<strong>不能断言「已根治」</strong>。可能原因（未验证）：主理人测的是命令行 <code>--pool=forks</code> 单独覆盖，而配置文件里的 <code>poolOptions.forks.singleFork: true</code> 依然生效；或环境时序差异。    → <strong>「fileParallelism: false 在所有包上是否有效」这个问题在 miniapp-user / admin-web 上不成立</strong> —— 它们磁盘 0 个测试文件，<strong>没有测试可丢</strong>。这类包应显式标注「无测试」而非静默跳过（<code>check-test-collection.ts</code> 已做对）。</p>
+<ol><li><strong>破坏法报告本轮未产出</strong>：仓库里仅 <code>order.sos.test.ts</code> 带破坏法标记，未找到系统性的破坏法验证机制，故线索 2 的判定是"逐例推演未发现错位"，<strong>不等于"有机制保证不错位"</strong>。</li><li><strong><code>order.service.ts:248-266</code> 行号</strong>采自主理人告知，我未逐字核对该具体行区间的全部内容（核了 <code>coupon-deduct.ts</code> 与 wiring 测试的断言同源性）。</li><li><strong><del>P13 的随机失败未定位</del></strong> → <strong>第四轮已定位并撤销 P13</strong>：根因是 <strong>threads 池的 native 崩溃</strong>（机制 3，EXIT=139/0xC0000005），配置层四件套下 14/14 全绿。<strong>遗留</strong>：崩溃的具体 native 栈未取（需 core dump / Windows 事件查看器），<strong>未定位是哪个 native 模块崩的</strong>。</li><li><strong>P10 的三方字段差集只覆盖 <code>/admin/activity/elders</code> 一个端点</strong>。本项目其他端点（尤其 <code>dashboard</code> / <code>alerts</code> / <code>funnel</code> / <code>revenue</code>）<strong>未做同样核验</strong> —— 同一模式可能普遍存在。<strong>不覆盖</strong>：其余 4 个管理端端点 + 全部用户端/陪聊员端端点。</li><li><strong>P11 只核了服务端 8 处关键 <code>.catch()</code></strong>。前端 50+ 处 <code>.catch(() => null)</code> <strong>未逐条核</strong>（多数是 UI 降级，合理），但<strong>未核</strong>是否存在「吞掉业务错误」的前端案例。</li></ol>
+<hr>
+<p><strong>报告结束</strong>｜ 顾图南（Silas Frame）｜ rnd-linban｜ 2026-10 本报告只读审计，未修改任何代码。所有命令与行号可复现。</p>
+<footer>
+报告结束 ｜ 顾图南（Silas Frame）｜ rnd-linban ｜ 2026-10<br>
+本报告只读审计，未修改任何代码。所有命令与行号可复现。<br>
+配套文档：<code>GATE-COLLECTION-SPEC.md</code>（P1 实现规格）· <code>GATE-AUDIT-L10-SELFCHECK.md</code>（线索 10 自审）· <code>GATE-AUDIT-METHODOLOGY-TEMPLATE.md</code>（方法论模板）
+</footer>
+</body>
+</html>
