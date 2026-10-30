@@ -1,0 +1,23 @@
+{
+  "miniprogramRoot": "dist/weapp/",
+  "projectname": "linban-miniapp-user",
+  "description": "邻伴·用户端小程序（老人优先）",
+  "appid": "touristappid",
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "urlCheck": false,
+    "coverView": true,
+    "lazyloadPlaceholderEnable": false,
+    "compileHotReLoad": false,
+    "ignoreUploadUnusedFiles": true
+  },
+  "compileType": "miniprogram",
+  "libVersion": "3.0.0",
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  }
+}

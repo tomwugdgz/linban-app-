@@ -1,0 +1,46 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "types": ["vite/client", "node"]
+  },
+  // scripts 下只有 .ts 会被纳入（.mjs 不开 allowJs，天然排除）。
+  // 为什么要把 scripts/*.ts 纳入类型检查：枚举门禁（enum-guard.ts）与冒烟出口
+  // （smoke-enums.ts）是**测试基础设施**，但它们承载的断言会决定 CI 红绿。
+  // 若不被检查，一次重构就能悄悄把门禁改坏而没人发现——
+  // 这与「断言没牙齿」是同一类问题，只是发生在断言自己身上。
+  //
+  // ⚠️ 为什么 `typecheck` 与 `build` 用了两套 tsc 调用（2026-10 主理人裁定后统一）
+  //   typecheck = tsc --noEmit -p tsconfig.json && tsc -b tsconfig.node.json
+  //   build     = tsc -b && vite build
+  //   **不是配置不一致，是 TS 的硬约束**：`tsc -b`（build mode）**不支持 `--noEmit`**，
+  //   TS 5.6 起直接报 TS6310「Referenced project may not disable emit」。
+  //   所以 typecheck 只能拆成两段：
+  //     ① 主工程用 `-p`（非 build mode）→ 支持 --noEmit → 覆盖 src + scripts/**/*.ts
+  //     ② 引用工程用 `-b`（build mode）→ 覆盖 vite.config.ts，产物落 node_modules/.tmp
+  //   ⚠️ 拆成两段的**副作用**（主理人指出）：`-p tsconfig.json` **不构建 references**，
+  //   光跑第 ① 段会让 `vite.config.ts` 完全脱离类型检查 ——
+  //   这与「scripts/ 不在 include 范围」是同一类缝隙（门禁/配置文件不在检查范围），只是对象换了。
+  //   故第 ② 段 `tsc -b tsconfig.node.json` **不可省**。
+  //   **反向验证方法**：故意在 vite.config.ts 写一个类型错误，确认 typecheck 会红（见变更记录）。
+  "include": ["src", "scripts/**/*.ts"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}

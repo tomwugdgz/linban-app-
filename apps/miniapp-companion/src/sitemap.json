@@ -1,0 +1,9 @@
+{
+  "desc": "邻伴陪聊员端小程序页面索引",
+  "rules": [
+    {
+      "action": "disallow",
+      "page": "*"
+    }
+  ]
+}

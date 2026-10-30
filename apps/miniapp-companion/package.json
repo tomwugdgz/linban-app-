@@ -1,0 +1,44 @@
+{
+  "name": "@linban/miniapp-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "邻伴·陪聊员端小程序（四审入驻 / 接单 / 核销 / 收入，Taro 4 + React + TypeScript）",
+  "scripts": {
+    "dev:weapp": "taro build --type weapp --watch",
+    "build:weapp": "taro build --type weapp",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "verify:pages": "node scripts/verify-pages.js",
+    "verify:teeth": "node scripts/verify-assertions-have-teeth.js"
+  },
+  "dependencies": {
+    "@babel/runtime": "^7.23.9",
+    "@linban/shared": "*",
+    "@tarojs/components": "4.3.0",
+    "@tarojs/helper": "4.3.0",
+    "@tarojs/plugin-framework-react": "4.3.0",
+    "@tarojs/plugin-platform-weapp": "4.3.0",
+    "@tarojs/runtime": "4.3.0",
+    "@tarojs/taro": "4.3.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "zustand": "^4.5.2",
+    "@tarojs/react": "4.3.0",
+    "react-reconciler": "0.29.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.23.9",
+    "@tarojs/cli": "4.3.0",
+    "@tarojs/mini-runner": "^4.0.0",
+    "@tarojs/webpack5-runner": "4.3.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/webpack-env": "^1.16.0",
+    "babel-preset-taro": "^4.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

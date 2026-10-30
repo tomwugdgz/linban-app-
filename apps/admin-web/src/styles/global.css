@@ -1,0 +1,263 @@
+/* 全局基础样式：仅放布局骨架与 antd 难以覆盖的少量规则，组件样式一律内联/CSS-in-JS */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: #f5f6f8;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+/* 登录页全屏渐变（老人线品牌暖色） */
+.login-page {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #fff4ec 0%, #ffe3d3 55%, #ffd6c2 100%);
+}
+
+/* 布局骨架 */
+.app-layout {
+  height: 100%;
+}
+
+.app-sider {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background: #fff;
+  border-right: 1px solid #f0f0f0;
+}
+
+.app-sider .brand {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px;
+  font-size: 17px;
+  font-weight: 700;
+  color: #d4380d;
+  border-bottom: 1px solid #f5f5f5;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
+}
+
+.app-sider .brand .brand-sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.app-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 20px;
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.app-content {
+  padding: 20px;
+  flex: 1;
+}
+
+.page-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  border: 1px solid #f0f0f0;
+}
+
+.page-card + .page-card {
+  margin-top: 16px;
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.page-desc {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.filter-bar .filter-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+/* 数字统计卡 */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.stat-card {
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.stat-card .stat-label {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stat-card .stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-card .stat-extra {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  margin-top: 4px;
+}
+
+/* 图表容器：ECharts 需要显式高度 */
+.chart-box {
+  width: 100%;
+  height: 320px;
+}
+
+/* 详情页 Descriptions 值里的等宽数字 */
+.ant-descriptions .num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 健康活动：数据不足/信号过期的老人行加重底色。
+   目的：让「我们不知道」在列表里视觉上独立成一片，运营不能把它扫成正常行。
+   刻意不用低饱和灰——灰底在密集表格里容易被当成 zebra 条纹而忽略。 */
+.ant-table-tbody > tr.row-unknown > td {
+  background: #f6f6f6;
+}
+.ant-table-tbody > tr.row-unknown:hover > td {
+  background: #efefef !important;
+}
+
+/* 引流漏斗：同意层（合规核心指标）与最大流失层（优化优先级）单独底色。
+   两行都是「必须被第一眼看到」的行，用底色而非仅靠 Tag 文字，避免被扫视略过。 */
+.ant-table-tbody > tr.row-consent > td {
+  background: #f9f0ff;
+}
+.ant-table-tbody > tr.row-consent:hover > td {
+  background: #f0e6ff !important;
+}
+.ant-table-tbody > tr.row-churn > td {
+  background: #fff2f0;
+}
+.ant-table-tbody > tr.row-churn:hover > td {
+  background: #ffe7e5 !important;
+}
+
+/* ==========================================================================
+   订阅营收页（Q8 账务隔离）
+   --------------------------------------------------------------------------
+   🔴 这套样式的**唯一目的**是让「订阅收入」在视觉上**不可能被误当成佣金/分账收入**。
+
+   Q8 原文（PRD §5 / 主理人裁定）：订阅收入是**独立科目**，不进陪聊分账池。
+   运营看分账页与看营收页时，若视觉语言一样，就会自然地把两个数字加在一起
+   —— 而这两个数字**根本不能相加**（分账池的钱是陪聊员可提现的收入，
+   订阅收入是平台自收的订阅费）。相加会让财务对账时看到一个不存在的数。
+
+   所以这里用三重视觉隔离：
+     ① 蓝色系（AntD 的红是分账/佣金的主色，订阅营收刻意避开红）；
+     ② 顶部「独立科目」标识条 + 原样展示的 accountingNote；
+     ③ 页面上**不存在**任何「总收入」聚合卡片 —— 一旦有，运营就会去加它。
+   ========================================================================== */
+
+/* 科目隔离标识条：页面顶部常驻，不可折叠、不可关闭 */
+.revenue-isolation-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: #e6f4ff;
+  border: 1px solid #91caff;
+  border-radius: 8px;
+  color: #003a8c;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.revenue-isolation-bar .revenue-isolation-icon {
+  font-size: 16px;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+.revenue-isolation-bar .revenue-isolation-note {
+  display: block;
+  margin-top: 2px;
+  color: #0958d9;
+  font-weight: 600;
+}
+
+/* 档位行色标：左侧色条区分三档，弱化金额大小对比（运营看的是结构不是大小） */
+.revenue-tier-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.revenue-tier-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.revenue-tier-dot.tier-free { background: #bfbfbf; }
+.revenue-tier-dot.tier-pro { background: #1677ff; }
+.revenue-tier-dot.tier-institutional { background: #722ed1; }
+
+/* 未计入当期收入的明细行：整行灰底。
+   目的：财务扫明细时，「这行没进报表」必须一眼可辨 ——
+   否则会把这行的金额加到汇总上，导致对账差额无法定位。 */
+.ant-table-tbody > tr.row-not-counted > td {
+  background: #fafafa;
+  color: rgba(0, 0, 0, 0.45);
+}
+.ant-table-tbody > tr.row-not-counted:hover > td {
+  background: #f5f5f5 !important;
+}

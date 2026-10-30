@@ -1,0 +1,495 @@
+/* ==========================================================================
+   邻伴·陪聊员端全局样式
+   - 适老化：CSS 变量 --font-scale 由 page-wrap 的 fs-large/fs-xlarge 类切换，
+     所有文本工具类用 calc(Nrpx * var(--font-scale)) 统一缩放；
+   - 品牌色：与用户端同源（暖橙），但陪聊员端以「效率优先」为基调：
+     信息密度略高、状态色更醒目；
+   - 醒目状态色：成功绿/提醒橙/危险红/进行中蓝。
+   ========================================================================== */
+
+page {
+  --font-scale: 1;
+  --brand: #ff7a45;
+  --brand-deep: #e55a1b;
+  --brand-light: #fff1e8;
+  --text-main: #2b2118;
+  --text-sub: #8a7b6e;
+  --text-weak: #b5a89b;
+  --bg-page: #fbf6f1;
+  --bg-card: #ffffff;
+  --success: #1fa97a;
+  --success-bg: #e3f6ee;
+  --warning: #f5a623;
+  --warning-bg: #fef3de;
+  --danger: #e64545;
+  --danger-bg: #fce8e8;
+  --info: #3a7bfd;
+  --info-bg: #e8f0ff;
+  --purple: #8e5bf0;
+  --purple-bg: #f1eafe;
+  --line: #f0e4da;
+  --radius-lg: 24rpx;
+  --radius-md: 16rpx;
+  --radius-sm: 10rpx;
+  background-color: var(--bg-page);
+  color: var(--text-main);
+  font-size: calc(30rpx * var(--font-scale));
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  line-height: 1.6;
+}
+
+/* 大字模式（stores/settings 派生类名，挂在 page-wrap 根节点） */
+.fs-large {
+  --font-scale: 1.25;
+}
+.fs-xlarge {
+  --font-scale: 1.5;
+}
+
+.page-wrap {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ---------- 文本层级 ---------- */
+.t-hero {
+  font-size: calc(52rpx * var(--font-scale));
+  font-weight: 700;
+  line-height: 1.3;
+}
+.t-title {
+  font-size: calc(38rpx * var(--font-scale));
+  font-weight: 600;
+  line-height: 1.35;
+}
+.t-strong {
+  font-size: calc(34rpx * var(--font-scale));
+  font-weight: 600;
+}
+.t-body {
+  font-size: calc(30rpx * var(--font-scale));
+  line-height: 1.6;
+}
+.t-sub {
+  font-size: calc(26rpx * var(--font-scale));
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+.t-weak {
+  font-size: calc(24rpx * var(--font-scale));
+  color: var(--text-weak);
+}
+.t-price {
+  font-size: calc(40rpx * var(--font-scale));
+  font-weight: 700;
+  color: var(--brand-deep);
+}
+.t-brand {
+  color: var(--brand-deep);
+}
+
+/* ---------- 布局 ---------- */
+.card {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: calc(28rpx * var(--font-scale));
+  margin: calc(24rpx * var(--font-scale)) calc(28rpx * var(--font-scale));
+  box-shadow: 0 4rpx 16rpx rgba(43, 33, 24, 0.04);
+}
+.row {
+  display: flex;
+  align-items: center;
+}
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+}
+.gap-8 {
+  gap: 8rpx;
+}
+.gap-16 {
+  gap: 16rpx;
+}
+.gap-24 {
+  gap: 24rpx;
+}
+.flex-1 {
+  flex: 1;
+  min-width: 0;
+}
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.px-28 {
+  padding-left: calc(28rpx * var(--font-scale));
+  padding-right: calc(28rpx * var(--font-scale));
+}
+.mt-16 {
+  margin-top: calc(16rpx * var(--font-scale));
+}
+.mt-24 {
+  margin-top: calc(24rpx * var(--font-scale));
+}
+
+/* ---------- 按钮（适老：大触达区） ---------- */
+.btn-primary {
+  background: linear-gradient(135deg, #ff8f5e, var(--brand-deep));
+  color: #fff;
+  border-radius: 999rpx;
+  font-size: calc(34rpx * var(--font-scale));
+  font-weight: 600;
+  min-height: calc(96rpx * var(--font-scale));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+}
+.btn-primary[disabled] {
+  background: #e8dcd2;
+  color: #fff;
+}
+.btn-ghost {
+  background: var(--brand-light);
+  color: var(--brand-deep);
+  border-radius: 999rpx;
+  font-size: calc(30rpx * var(--font-scale));
+  min-height: calc(88rpx * var(--font-scale));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+}
+.btn-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-radius: 999rpx;
+  font-size: calc(30rpx * var(--font-scale));
+  min-height: calc(88rpx * var(--font-scale));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+}
+.btn-block {
+  width: 100%;
+}
+.btn-sm {
+  min-height: calc(64rpx * var(--font-scale));
+  font-size: calc(26rpx * var(--font-scale));
+  padding: 0 calc(28rpx * var(--font-scale));
+  border-radius: 999rpx;
+}
+
+/* ---------- 标签 / 徽标 ---------- */
+.tag {
+  font-size: calc(22rpx * var(--font-scale));
+  color: var(--brand-deep);
+  background: var(--brand-light);
+  border-radius: calc(8rpx * var(--font-scale));
+  padding: calc(4rpx * var(--font-scale)) calc(14rpx * var(--font-scale));
+}
+.tag-plain {
+  font-size: calc(22rpx * var(--font-scale));
+  color: var(--text-sub);
+  background: #f6efe9;
+  border-radius: calc(8rpx * var(--font-scale));
+  padding: calc(4rpx * var(--font-scale)) calc(14rpx * var(--font-scale));
+}
+.status-chip {
+  font-size: calc(24rpx * var(--font-scale));
+  font-weight: 600;
+  border-radius: calc(8rpx * var(--font-scale));
+  padding: calc(6rpx * var(--font-scale)) calc(16rpx * var(--font-scale));
+}
+
+/* ---------- 头像 ---------- */
+.avatar {
+  width: calc(104rpx * var(--font-scale));
+  height: calc(104rpx * var(--font-scale));
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffd9c2, #ffb68f);
+  color: var(--brand-deep);
+  font-size: calc(40rpx * var(--font-scale));
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.avatar-lg {
+  width: calc(160rpx * var(--font-scale));
+  height: calc(160rpx * var(--font-scale));
+  font-size: calc(60rpx * var(--font-scale));
+}
+
+/* ---------- 表单 ---------- */
+.input-box {
+  background: #f8f3ee;
+  border-radius: var(--radius-md);
+  padding: calc(20rpx * var(--font-scale)) calc(24rpx * var(--font-scale));
+  font-size: calc(30rpx * var(--font-scale));
+}
+.field-label {
+  font-size: calc(28rpx * var(--font-scale));
+  font-weight: 600;
+  margin-bottom: calc(12rpx * var(--font-scale));
+}
+
+/* ---------- 分割线 ---------- */
+.divider {
+  height: 1rpx;
+  background: var(--line);
+  margin: calc(20rpx * var(--font-scale)) 0;
+}
+
+/* ---------- 底部操作栏 ---------- */
+.bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #fff;
+  padding: calc(16rpx * var(--font-scale)) calc(28rpx * var(--font-scale))
+    calc(16rpx + env(safe-area-inset-bottom));
+  box-shadow: 0 -4rpx 20rpx rgba(43, 33, 24, 0.06);
+  display: flex;
+  align-items: center;
+  gap: calc(20rpx * var(--font-scale));
+}
+
+/* 时间线 */
+.timeline-dot {
+  width: calc(16rpx * var(--font-scale));
+  height: calc(16rpx * var(--font-scale));
+  border-radius: 50%;
+  background: var(--brand);
+  flex-shrink: 0;
+}
+.timeline-line {
+  width: 2rpx;
+  flex: 1;
+  background: var(--line);
+  margin: 6rpx 0;
+}
+
+/* ---------- 弹窗 ---------- */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(43, 33, 24, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 60rpx;
+}
+.modal-box {
+  background: #fff;
+  border-radius: var(--radius-lg);
+  padding: calc(40rpx * var(--font-scale));
+  width: 100%;
+  max-width: 620rpx;
+}
+
+/* ---------- 分段控件 ---------- */
+.segment {
+  display: flex;
+  background: #f6efe9;
+  border-radius: 999rpx;
+  padding: 6rpx;
+}
+.segment-item {
+  flex: 1;
+  text-align: center;
+  font-size: calc(26rpx * var(--font-scale));
+  color: var(--text-sub);
+  border-radius: 999rpx;
+  padding: calc(12rpx * var(--font-scale)) 0;
+}
+.segment-item.active {
+  background: #fff;
+  color: var(--brand-deep);
+  font-weight: 600;
+  box-shadow: 0 2rpx 8rpx rgba(43, 33, 24, 0.08);
+}
+
+/* ---------- 聊天气泡 ---------- */
+.bubble {
+  max-width: 68%;
+  border-radius: var(--radius-md);
+  padding: calc(20rpx * var(--font-scale)) calc(24rpx * var(--font-scale));
+  font-size: calc(30rpx * var(--font-scale));
+  line-height: 1.6;
+  word-break: break-all;
+}
+.bubble-peer {
+  background: #fff;
+  color: var(--text-main);
+  border-top-left-radius: 4rpx;
+}
+.bubble-mine {
+  background: linear-gradient(135deg, #ff8f5e, var(--brand-deep));
+  color: #fff;
+  border-top-right-radius: 4rpx;
+}
+.bubble-system {
+  background: #f6efe9;
+  color: var(--text-sub);
+  font-size: calc(24rpx * var(--font-scale));
+  text-align: center;
+  max-width: 86%;
+}
+
+/* ---------- 宫格入口 ---------- */
+.grid-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(12rpx * var(--font-scale));
+  width: 33.33%;
+  padding: calc(20rpx * var(--font-scale)) 0;
+}
+.grid-entry-icon {
+  width: calc(88rpx * var(--font-scale));
+  height: calc(88rpx * var(--font-scale));
+  border-radius: calc(24rpx * var(--font-scale));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(44rpx * var(--font-scale));
+}
+
+/* ---------- 四审步骤（入驻流程） ---------- */
+.review-step {
+  display: flex;
+  gap: calc(20rpx * var(--font-scale));
+  padding: calc(24rpx * var(--font-scale)) 0;
+}
+.review-step-index {
+  width: calc(64rpx * var(--font-scale));
+  height: calc(64rpx * var(--font-scale));
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(30rpx * var(--font-scale));
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.review-step.done .review-step-index {
+  background: var(--success);
+  color: #fff;
+}
+.review-step.current .review-step-index {
+  background: var(--brand);
+  color: #fff;
+}
+.review-step.todo .review-step-index {
+  background: #f6efe9;
+  color: var(--text-weak);
+}
+
+/* ---------------------------------------------------------------------------
+ * SOS 紧急求助红色全屏浮层
+ * ---------------------------------------------------------------------------
+ * 独立于 modal-mask：SOS 必须是「全屏、不可被下层内容看见」的红屏，
+ * 不能做成半透明遮罩上的小卡片——老人安全事件不能因为「没看清」被忽略。
+ * 字号全部走 var(--font-scale)，与全局适老化保持一致。
+ * ------------------------------------------------------------------------- */
+.sos-layer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 9999;
+  background: #b3261e;
+  padding: calc(64rpx * var(--font-scale)) calc(40rpx * var(--font-scale)) calc(48rpx * var(--font-scale));
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.sos-layer-badge {
+  align-self: flex-start;
+  background: #fff;
+  border-radius: 999rpx;
+  padding: calc(8rpx * var(--font-scale)) calc(28rpx * var(--font-scale));
+  margin-bottom: calc(32rpx * var(--font-scale));
+}
+.sos-layer-badge-text {
+  color: #b3261e;
+  font-weight: 800;
+  font-size: calc(32rpx * var(--font-scale));
+  letter-spacing: 4rpx;
+}
+.sos-layer-title {
+  color: #fff;
+  font-weight: 800;
+  font-size: calc(48rpx * var(--font-scale));
+  line-height: 1.35;
+}
+.sos-layer-sub {
+  color: #ffe0dd;
+  font-size: calc(28rpx * var(--font-scale));
+  margin-top: calc(12rpx * var(--font-scale));
+  line-height: 1.5;
+}
+.sos-layer-warn {
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: calc(20rpx * var(--font-scale));
+  padding: calc(28rpx * var(--font-scale));
+  margin-top: calc(36rpx * var(--font-scale));
+}
+.sos-layer-warn-text {
+  display: block;
+  color: #fff;
+  font-size: calc(28rpx * var(--font-scale));
+  line-height: 1.7;
+}
+/* 订单核对区：白底，与红屏形成强对比，方便确认没点错单 */
+.sos-layer-check {
+  background: #fff;
+  border-radius: calc(20rpx * var(--font-scale));
+  padding: calc(28rpx * var(--font-scale));
+  margin-top: calc(32rpx * var(--font-scale));
+}
+.sos-layer-field {
+  margin-top: calc(32rpx * var(--font-scale));
+}
+.sos-layer-field .t-sub {
+  color: #ffe0dd;
+}
+.sos-layer-field .input-box {
+  background: #fff;
+}
+/* 主按钮：倒计时期间置灰且不可点，防扫点式误触 */
+.sos-layer-btn {
+  margin-top: calc(48rpx * var(--font-scale));
+  background: #fff;
+  color: #b3261e;
+  border-radius: calc(999rpx * var(--font-scale));
+  padding: calc(32rpx * var(--font-scale));
+  text-align: center;
+  font-weight: 800;
+  font-size: calc(34rpx * var(--font-scale));
+}
+.sos-layer-btn.disabled {
+  background: rgba(255, 255, 255, 0.4);
+  color: rgba(0, 0, 0, 0.3);
+}
+.sos-layer-cancel {
+  margin-top: calc(24rpx * var(--font-scale));
+  color: #ffe0dd;
+  text-align: center;
+  font-size: calc(30rpx * var(--font-scale));
+  padding: calc(20rpx * var(--font-scale));
+}
