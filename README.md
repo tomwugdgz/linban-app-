@@ -1,6 +1,6 @@
 # 邻伴 · 社区养老陪伴匹配平台
 
-![CI](https://github.com/tomwugdgz/linban-app/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/tomwugdgz/linban-app-/actions/workflows/ci.yml/badge.svg)
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
