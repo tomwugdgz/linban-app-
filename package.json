@@ -1,0 +1,27 @@
+{
+  "name": "linban-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "邻伴 · 社区养老陪伴匹配平台（monorepo：shared 共享包 + server 服务端 + 三端前端）",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run build --workspace @linban/shared",
+    "typecheck": "npm run typecheck --workspace @linban/shared && npm run typecheck --workspace @linban/server",
+    "test": "npm run test --workspace @linban/server",
+    "verify:all": "node scripts/verify-all.cjs",
+    "verify:list": "node scripts/verify-all.cjs --list",
+    "lint": "echo \"(MVP 未配置 eslint，占位)\" && exit 0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@tarojs/plugin-framework-react": "^4.3.0"
+  },
+  "devDependencies": {
+    "webpack": "^5.91.0"
+  }
+}
