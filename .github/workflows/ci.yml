@@ -1,0 +1,218 @@
+# ============================================================================
+# 邻伴 · CI 门禁流水线
+# ============================================================================
+# 目的：把「门禁存在但没人跑」变成「每次 push/PR 自动跑」。
+#
+# ── 三条硬设计（每条都对应一次真实踩坑）─────────────────────────────────
+#
+# 1. **收集完整性断言必须是第一步，且必须是独立 step**
+#    2026-10-22 实测：守门测试被静默丢弃时，vitest 报告仍然显示 passed。
+#    丢掉的 3 个**全是守门测试**（密文巡检 / RBAC / 营收端点契约）。
+#    若收集完整性断言排在其它门禁之后，前面的门禁可能用一份「缺了守卫」的
+#    测试结果判绿 → **老问题嵌套新问题**。
+#    所以它必须是 **第一个 step**，失败即短路（后续 step 不跑）。
+#
+# 2. **不依赖任何数据库/外部服务就能跑通「必需门禁」**
+#    CI 是「提 PR 时的第一道反馈」，不是「上线前的最后一道验收」。
+#    需 DB 的门禁（迁移状态 / 券回填校验）归到独立的 deploy job，
+#    失败不影响 PR 门禁 —— 但**它必须存在**，且在 PR 上显示为「需手动触发」
+#    而不是「不存在」。
+#
+# 3. **退出码分级：fail=1 / 收集阶段失败=2 / 有跳过=3**
+#    实测：vitest 因 EPERM 落在 unhandled errors 区时，**测试全过但退出码=1**；
+#    反过来，默认池丢了 3 个守门测试，退出码可能=0。
+#    所以聚合入口统一判读，每条门禁声明它期望的判据形态。
+#    `scripts/verify-all.cjs` 是唯一入口，CI 不自己拼 && 链。
+#
+# ── 为什么用 npm ci 而不是 npm install ─────────────────────────────────
+#   `npm ci` 严格按 package-lock.json 安装，lock 与 package.json 不一致时**直接失败**。
+#   这正是我们要的：lock 漂了必须暴露，不能悄悄用新版本。
+#   （代价：改 package.json 后必须重新 `npm install` 更新 lock，否则 CI 报
+#    "lock file out of sync" —— 这是好事，不是麻烦。）
+# ============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  # 手动触发：用于「需 DB 的门禁」与「发版前全量验收」
+  workflow_dispatch:
+    inputs:
+      run_db_gates:
+        description: '是否运行需数据库的门禁（迁移状态 / 存量券回填校验）'
+        type: boolean
+        default: false
+
+# ── 并发控制：同一分支的新 push 取消旧 run ───────────────────────────────
+# 理由：门禁跑一遍要几分钟。不取消的话，一连 push 5 次会排队跑 5 遍，
+# 最后一次的结果才是有效的，前面的都在浪费机器。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  # 强制 npm 用可靠的 registry（CI 环境变量继承不可控，显式声明）
+  NPM_CONFIG_FUND: 'false'
+  NPM_CONFIG_AUDIT: 'false'
+
+jobs:
+  # ==========================================================================
+  # Job 1：必需门禁（PR 门禁）
+  # ==========================================================================
+  # 硬要求：**第一个 step 必须是收集完整性断言**，失败即短路。
+  gates:
+    name: 必需门禁（收集 → 单测 → 类型 → 文档）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 装 Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: 安装依赖（npm ci，lock 漂移即失败）
+        run: npm ci --no-audit --no-fund
+
+      # ────────────────────────────────────────────────────────────────────
+      # Step 1：收集完整性断言 —— **必须是第一步**
+      # ────────────────────────────────────────────────────────────────────
+      # 它做三件事（见 apps/server/scripts/check-test-collection.ts）：
+      #   ① 检查 vitest 配置的 pool/fileParallelism/singleFork/cacheDir 在位
+      #   ② 磁盘测试文件数 vs 报告收集数 vs 通过数（三数比对）
+      #   ③ 逐个点名守门测试是否被收集
+      #
+      # 注意：CI 是 Linux，**Windows 上的 EPERM 机制① 不会出现**，
+      # 但机制②（并发写同名缓存互相覆盖）在任何多核机器都可能出现 ——
+      # 所以 vitest.config.ts 的四项配置**在 CI 上同样要保留**。
+      - name: '🚨 第一步：收集完整性断言（守门测试有没有被静默丢弃）'
+        run: npm run test:check:collection --workspace @linban/server
+
+      # ────────────────────────────────────────────────────────────────────
+      # Step 2：全量门禁聚合
+      # ────────────────────────────────────────────────────────────────────
+      # 用 --strict：有任何跳过就退出码 3。
+      # 在 CI 上「跳过」= 「这项目标形同虚设」（门禁存在但没人跑），
+      # 所以 CI 里不允许静默跳过。
+      #
+      # 注意这一步**会重跑** Step 1 的收集完整性（它是聚合入口的第一条门禁）。
+      # 这是有意的冗余：Step 1 单独跑一次给出清晰的「门禁本身坏了」信号，
+      # 聚合跑一次给出完整的门禁全景。两者都绿才有意义。
+      - name: 全量门禁（聚合入口，--strict）
+        run: node scripts/verify-all.cjs --strict
+
+      # ────────────────────────────────────────────────────────────────────
+      # Step 3：把门禁清单打进构建日志
+      # ────────────────────────────────────────────────────────────────────
+      # 理由：「全绿」但没人知道跑了什么 → 可信度等于没有输出。
+      # verify-all 自己会打印汇总表，这一步额外把「清单」也打出来，
+      # 便于 review 时核对「这次到底检查了哪 16 项」。
+      - name: 门禁清单（便于 review 核对覆盖范围）
+        if: always()
+        run: node scripts/verify-all.cjs --list
+
+      # ────────────────────────────────────────────────────────────────────
+      # Step 4：上传门禁产物
+      # ────────────────────────────────────────────────────────────────────
+      # vitest 的 JSON 报告是「收集完整性」的唯一证据来源。
+      # 收集数对不上时，没有这份文件就无法排查。
+      - name: 上传 vitest 收集报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-collection-report
+          path: |
+            apps/server/.tmp/vitest-collection-report.json
+            apps/miniapp-companion/.tmp/vitest-collection-report.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ==========================================================================
+  # Job 2：需数据库的门禁（上线前验收）
+  # ==========================================================================
+  # 与 Job 1 分开的原因：
+  #   ① 需要 MySQL 服务容器，跑得慢，不该拖慢 PR 反馈
+  #   ② 这类门禁**是上线阻塞项**，不是 PR 阻塞项
+  #   ③ 失败时 PR 不该红（那会让人学会忽略红灯）
+  db-gates:
+    name: 上线前门禁（需真实 MySQL · 手动触发）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # 只在手动触发且勾选了开关时跑；push/PR 上显示为 skipped 而不是不存在
+    if: github.event_name == 'workflow_dispatch' && inputs.run_db_gates == true
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          # 与 docker-compose.yml 保持一致：UTC + utf8mb4
+          # 理由：缺 timezone=UTC → 跨时区订单时段错位；
+          #       缺 utf8mb4 → 存不了 emoji/生僻字（社区名、评价）
+          MYSQL_ROOT_PASSWORD: rootpw
+          MYSQL_DATABASE: linban
+          TZ: UTC
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -prootpw"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+        # 时区与字符集在初始化阶段设好（docker-entrypoint-initdb.d 机制）
+        volumes:
+          - ./ci/mysql-init:/docker-entrypoint-initdb.d:ro
+
+    env:
+      DATABASE_URL: 'mysql://root:rootpw@127.0.0.1:3306/linban'
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 装 Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: 安装依赖
+        run: npm ci --no-audit --no-fund
+
+      - name: 确认字符集与时区
+        run: |
+          mysql -h 127.0.0.1 -uroot -prootpw -e "
+            SELECT @@global.time_zone AS global_tz, @@session.time_zone AS session_tz;
+            SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME
+              FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='linban';
+          "
+          echo '--- 期望：time_zone = +00:00（UTC），字符集 utf8mb4 ---'
+
+      - name: 应用迁移（migrate deploy）
+        # 🔴 这是**从未在真实 MySQL 上执行过**的一步（2026-10-22 前）。
+        #    迁移链此前只做过「离线漂移检查」（末态结构 ≡ schema 重建结构）。
+        #    本 job 存在的意义就是把这件事真正做掉。
+        run: npm run prisma:migrate:deploy --workspace @linban/server
+
+      - name: 迁移状态（migrate status）
+        run: npm run prisma:migrate:status --workspace @linban/server
+
+      - name: 存量券快照回填校验（上线阻塞：残留必须为 0）
+        # 理由：存量券的 value_snapshot 为 NULL → 改券模板会让**存量券面额跟着变**
+        # → 资损。这是「回填填 0」与「回填留 null」两种问题里更隐蔽的一种。
+        run: npx tsx scripts/check-coupon-backfill.ts
+        working-directory: apps/server
+
+      - name: 需 DB 的全量门禁（含迁移状态 + 回填校验，--strict）
+        run: node scripts/verify-all.cjs --strict
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
