@@ -8,7 +8,8 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { AppError } from '@linban/shared';
+import { AppError, companion_role_values } from '@linban/shared';
+import type { companion_role } from '@linban/shared';
 import { authMiddleware, roleGuard } from '../../middlewares/auth';
 import { adminAuthMiddleware, adminPermGuard } from '../../middlewares/auth';
 import { parseOrThrow, validateBody } from '../../common/validation';
@@ -44,10 +45,18 @@ export const companionAdminRouter = Router();
 /** POST /companion/applications —— 提交入驻申请 */
 companionRouter.post('/applications', authMiddleware, roleGuard('COMPANION'), async (req, res, next) => {
   try {
+    // companionRole 接受四值全集（§15.6）：字段格式错交 zod(10001)，「角色未开放」
+    // 交 service 的 assertOpenCompanionRole(13016)。zod 不缩到两个开放值，是为了
+    // 未来开放新角色只改 service 白名单、不动接口契约。Object.values 返回数组，
+    // z.enum 需要非空元组，故此处做类型断言（取值域仍完全来自 shared）。
+    const companionRoleSchema = z.enum(
+      companion_role_values as [companion_role, ...companion_role[]],
+    );
     const schema = z.object({
       realName: z.string().min(2).max(32),
       idCard: z.string().regex(/^\d{17}[\dXx]$/),
       hourlyRateFen: fenSchema,
+      companionRole: companionRoleSchema,
       serviceRadiusM: z.number().int().min(500).max(20000).optional(),
       tags: z.array(z.string().max(8)).max(10).optional(),
       anchorLat: z.number(),
@@ -192,6 +201,7 @@ companionRouter.get('/me', authMiddleware, roleGuard('COMPANION'), async (req, r
       data: {
         id: companion.id.toString(),
         status: companion.status,
+        role: companion.role,
         creditScore: companion.credit_score,
         limited: await isCompanionLimited(companion.id),
         hourlyRateFen: companion.hourly_rate_fen.toString(),
@@ -357,18 +367,21 @@ companionRouter.put('/schedules', authMiddleware, roleGuard('COMPANION'), async 
 /** GET /companions/nearby —— 附近可约陪聊员（R 态脱敏） */
 companionRouter.get('/nearby', authMiddleware, async (req, res, next) => {
   try {
+    // role 为可选筛（§15.8）；取值域仍取 shared 四值全集，与入驻契约同源
     const schema = z.object({
       geoHash: z.string().min(1).max(12),
+      role: z.enum(companion_role_values as [companion_role, ...companion_role[]]).optional(),
       page: z.coerce.number().int().min(1).default(1),
       pageSize: z.coerce.number().int().min(1).max(50).default(20),
     });
-    const { geoHash, page, pageSize } = parseOrThrow(schema, req.query);
-    // geohash 前缀扫描（DATABASE.md §4.1②）：ACTIVE × geo_hash 前缀
+    const { geoHash, role, page, pageSize } = parseOrThrow(schema, req.query);
+    // geohash 前缀扫描（DATABASE.md §4.1②）：ACTIVE × geo_hash 前缀（× role 可选筛）
     const list = await prisma.companions.findMany({
       where: {
         status: 'ACTIVE',
         deleted_at: null,
         geo_hash: { startsWith: geoHash.slice(0, 4) },
+        ...(role ? { role } : {}),
       },
       include: { user: { select: { id: true, nickname: true, avatar_url: true } } },
       orderBy: [{ rating_avg: 'desc' }, { completed_orders: 'desc' }],
@@ -382,6 +395,7 @@ companionRouter.get('/nearby', authMiddleware, async (req, res, next) => {
         nickname: c.user.nickname,
         avatarUrl: c.user.avatar_url,
         level: c.level,
+        role: c.role,
         ratingAvg: c.rating_avg.toString(),
         ratingCount: c.rating_count,
         tags: c.tags,
@@ -412,6 +426,7 @@ companionRouter.get('/:id', authMiddleware, async (req, res, next) => {
         nickname: c.user.nickname,
         avatarUrl: c.user.avatar_url,
         level: c.level,
+        role: c.role,
         ratingAvg: c.rating_avg.toString(),
         ratingCount: c.rating_count,
         tags: c.tags,
@@ -455,6 +470,9 @@ companionAdminRouter.get('/companion-applications', adminAuthMiddleware, adminPe
           applicationNo: a.application_no,
           companionId: a.companion_id.toString(),
           nickname: a.companion.user.nickname,
+          // 角色是陪聊员主档属性，经 application → companion.role 读取（§15.1 C7），
+          // 不给 companion_applications 表加列，避免双写漂移
+          role: a.companion.role,
           stage: a.stage,
           realnameStatus: a.realname_status,
           faceStatus: a.face_status,

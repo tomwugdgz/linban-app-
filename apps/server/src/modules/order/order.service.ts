@@ -21,7 +21,7 @@ import {
   SYSTEM_CONFIG_DEFAULTS,
   defaultConfigInt,
 } from '@linban/shared';
-import type { cancel_initiator, order_status, operator_type } from '@linban/shared';
+import type { cancel_initiator, companion_role, order_status, operator_type } from '@linban/shared';
 import { prisma, withTransaction } from '../../infra/prisma';
 import { redis } from '../../infra/redis';
 import { acquireLock, releaseLock } from '../../infra/redis';
@@ -39,8 +39,9 @@ import {
   serviceOvertimeSuspendDue,
   sosSuspendable,
 } from '../../domain/safety-suspend';
-import { rankDispatchCandidates } from '../../domain/dispatch';
+import { candidateEligible, scoreDispatchCandidate } from '../../domain/dispatch';
 import type { DispatchCandidate } from '../../domain/dispatch';
+import { rankByCompanionRole } from '../../domain/companion-role';
 import { calcCouponDeduct, needsBackfillLog } from '../../domain/coupon-deduct';
 import { applyCredit } from '../companion/companion.service';
 import { encrypt, isCryptoConfigured, maskAddress } from '../../common/crypto';
@@ -144,6 +145,8 @@ export interface CreateOrderInput {
   addressLng: number;
   couponUserCouponId?: bigint | null;
   giftCardId?: bigint | null;
+  /** 供给角色偏好（§15.12 C8）；NULL=未指定，派单时作为角色排序器入参 */
+  preferredRole?: companion_role | null;
   remark?: string;
   createdVia?: 'ELDER_APP' | 'FAMILY_APP' | 'CS';
 }
@@ -321,6 +324,8 @@ export async function createOrder(input: CreateOrderInput) {
         // 豁免单：老人自确认落痕（confirmer=老人本人）；非豁免单留空待子女确认
         family_confirmer_id: night && nightSelfConfirmed ? input.elderUserId : null,
         family_confirmed_at: night && nightSelfConfirmed ? new Date() : null,
+        // §15.12 C8：NULL=未指定（老人直用不传）；子女代下单的偏好供派单排序器使用
+        preferred_role: input.preferredRole ?? null,
         remark: input.remark ?? null,
         idempotency_key: `order:${input.userId}:${input.serviceDate}:${input.startTime}:${Date.now()}`,
         created_via: input.createdVia ?? (buyer.role === 'FAMILY' ? 'FAMILY_APP' : 'ELDER_APP'),
@@ -441,6 +446,7 @@ export async function dispatchOrder(orderId: bigint) {
       rating_avg: true,
       completed_orders: true,
       hourly_rate_fen: true,
+      role: true, // §15.12 C9：角色排序器需要候选的供给角色
       anchor_lat: true,
       anchor_lng: true,
       schedules: true,
@@ -461,7 +467,9 @@ export async function dispatchOrder(orderId: bigint) {
   const elderInterests = (await prisma.elder_profiles.findUnique({ where: { user_id: order.elder_user_id } }))
     ?.interests as string[] | null | undefined;
 
-  const candidates: DispatchCandidate[] = [];
+  // §15.12 C9：角色排序器要求 item 带 role，但 dispatch.ts 的 DispatchCandidate
+  // 按裁定零改动，故在调用侧用交叉类型扩展，不污染 domain 层接口
+  const candidates: Array<DispatchCandidate & { role: companion_role }> = [];
   for (const c of candidatesRaw) {
     // 时段占用过滤
     const isOccupied = occupied.some(
@@ -497,12 +505,23 @@ export async function dispatchOrder(orderId: bigint) {
       ratingAvg: Number(c.rating_avg),
       completedOrders: c.completed_orders,
       hourlyRateFen: c.hourly_rate_fen,
+      role: c.role,
     });
   }
 
-  const top = rankDispatchCandidates(candidates, { preferredTags: elderInterests ?? null }, 5, {
-    maxHourlyRateFen: order.total_amount_fen > 0n ? undefined : undefined,
-  });
+  // §15.12 C9：调用侧组合角色排序器，rankDispatchCandidates 与 dispatch.ts 零改动。
+  // 前三步刻意复刻 rankDispatchCandidates 内部顺序（candidateEligible 硬过滤 →
+  // scoreDispatchCandidate 基础分 → 降序），因此未指定角色时 rankByCompanionRole
+  // 原序返回，结果与改造前逐字一致；硬过滤在加成之前完成，角色加分绝不绕过
+  // 冻结线 / 等级 / 时薪上限等硬约束。有偏好时才按基础分分档 + 组内加成（不跨档）。
+  const dispatchQuery = { preferredTags: elderInterests ?? null };
+  const dispatchOpts = { maxHourlyRateFen: order.total_amount_fen > 0n ? undefined : undefined };
+  const eligible = candidates.filter((c) => candidateEligible(c, dispatchOpts));
+  const scored = eligible
+    .map((c) => ({ c, role: c.role, s: scoreDispatchCandidate(c, dispatchQuery) }))
+    .sort((a, b) => b.s - a.s || Number(a.c.companionId - b.c.companionId));
+  const ranked = rankByCompanionRole(scored, order.preferred_role, (x) => x.s);
+  const top = ranked.slice(0, 5).map((x) => x.c);
   if (top.length === 0) throw new AppError(14008, '附近暂无合适陪聊员（已按距离/标签/信用过滤）');
 
   const deadline = new Date(Date.now() + DISPATCH_TIMEOUT_MIN_DEFAULT * 60_000);

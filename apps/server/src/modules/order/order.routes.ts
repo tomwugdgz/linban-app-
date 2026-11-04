@@ -5,7 +5,8 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { AppError } from '@linban/shared';
+import { AppError, companion_role_values } from '@linban/shared';
+import type { companion_role } from '@linban/shared';
 import { authMiddleware, roleGuard } from '../../middlewares/auth';
 import { parseOrThrow, validateBody } from '../../common/validation';
 import { fenSchema, hmSchema, idSchema, localDateSchema } from '../../common/validation';
@@ -47,6 +48,10 @@ orderRouter.post('/', authMiddleware, async (req, res, next) => {
       addressLng: z.number(),
       couponUserCouponId: idSchema.optional(),
       giftCardId: idSchema.optional(),
+      // §15.8 / §15.12 C8：子女代下单可指定供给角色偏好，老人直用不传（NULL=未指定）。
+      // 取值域照例取 shared 四值全集；字段格式错交 zod(10001)，不在此判「角色是否开放」
+      // ——订单偏好是派单提示，不是入驻申请，判定口径不同（§15.6）。
+      preferredRole: z.enum(companion_role_values as [companion_role, ...companion_role[]]).optional(),
       remark: z.string().max(512).optional(),
     });
     const input = parseOrThrow(schema, req.body);
@@ -62,6 +67,7 @@ orderRouter.post('/', authMiddleware, async (req, res, next) => {
       addressLng: input.addressLng,
       couponUserCouponId: input.couponUserCouponId ? BigInt(input.couponUserCouponId) : null,
       giftCardId: input.giftCardId ? BigInt(input.giftCardId) : null,
+      preferredRole: input.preferredRole ?? null,
       remark: input.remark,
       createdVia: req.user!.role === 'FAMILY' ? 'FAMILY_APP' : 'ELDER_APP',
     });

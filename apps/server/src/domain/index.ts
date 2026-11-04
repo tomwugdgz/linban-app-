@@ -15,3 +15,4 @@ export * from './dispatch';
 export * from './safety-suspend';
 export * from './activity';
 export * from './activity-consent';
+export * from './companion-role';

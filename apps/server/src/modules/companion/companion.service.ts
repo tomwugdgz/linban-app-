@@ -16,7 +16,7 @@ import {
   SYSTEM_CONFIG_DEFAULTS,
   defaultConfigInt,
 } from '@linban/shared';
-import type { application_stage, credit_log_type, step_status } from '@linban/shared';
+import type { application_stage, companion_role, credit_log_type, step_status } from '@linban/shared';
 import { Prisma } from '@prisma/client';
 import { prisma, withTransaction } from '../../infra/prisma';
 import {
@@ -35,6 +35,7 @@ import {
   isExamPassed,
   stageToCompanionStatus,
 } from '../../domain/application-state-machine';
+import { assertOpenCompanionRole } from '../../domain/companion-role';
 import { getRealnameAdapter } from '../../adapters/realname';
 import { getFaceVerifyAdapter } from '../../adapters/face';
 import { encrypt, hmacIndex, isCryptoConfigured } from '../../common/crypto';
@@ -57,6 +58,8 @@ export interface SubmitApplicationInput {
   realName: string;
   idCard: string;
   hourlyRateFen: bigint;
+  /** 供给角色（四值域由路由 zod 把关，开放值判定在本函数入口，§15.6） */
+  companionRole: companion_role;
   serviceRadiusM?: number;
   tags?: string[];
   anchorLat: number;
@@ -67,8 +70,12 @@ export interface SubmitApplicationInput {
  * 提交入驻申请：创建/更新 companion 主档 + application（stage=APPLIED）。
  * 前置：账号角色 COMPANION、无在审申请（active_key='A' 唯一兜底）、
  * 身份证未注册（id_card_hmac unique）、时薪在产品定价带。
+ * 角色前置（§15.6）：TIME_BANK / VOLUNTEER 只留位，必须在此明确拒绝 13016，
+ * 绝不静默回落 SHARED_SON——放在任何 DB 读写之前，保证预留值进不了主档。
  */
 export async function submitApplication(userId: bigint, input: SubmitApplicationInput) {
+  assertOpenCompanionRole(input.companionRole);
+
   const user = await prisma.users.findUnique({ where: { id: userId } });
   if (!user) throw new AppError(10002, '账号不存在');
   if (user.role !== 'COMPANION') throw new AppError(10004, '仅陪聊员账号可提交入驻申请');
@@ -108,6 +115,8 @@ export async function submitApplication(userId: bigint, input: SubmitApplication
           id_card_cipher: idCardCipher,
           id_card_hmac: idCardHmac,
           hourly_rate_fen: input.hourlyRateFen,
+          // 角色是陪聊员主档属性（§15.1 C7）；重新提交申请允许改角色，故 update 也落库
+          role: input.companionRole,
           service_radius_m: input.serviceRadiusM ?? 3000,
           anchor_lat: anchor.lat,
           anchor_lng: anchor.lng,
@@ -126,6 +135,8 @@ export async function submitApplication(userId: bigint, input: SubmitApplication
           id_card_cipher: idCardCipher,
           id_card_hmac: idCardHmac,
           hourly_rate_fen: input.hourlyRateFen,
+          // 角色是陪聊员主档属性（§15.1 C7）；applications 表不冗余 role 列
+          role: input.companionRole,
           service_radius_m: input.serviceRadiusM ?? 3000,
           anchor_lat: anchor.lat,
           anchor_lng: anchor.lng,

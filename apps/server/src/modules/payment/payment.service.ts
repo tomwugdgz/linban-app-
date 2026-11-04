@@ -30,7 +30,7 @@ import {
   defaultSplitMode,
 } from '../../adapters/split-executor';
 import type { SplitMode } from '@linban/shared';
-import { assertSharingGate, computeCommission, resolveCommissionRateBp } from '../../domain';
+import { assertSharingEligible, assertSharingGate, computeCommission, resolveCommissionRateBp } from '../../domain';
 import { assertTransition, triggersUnfreezeOrReturn } from '../../domain/order-state-machine';
 import { genBizNo } from '../../common/ids';
 import { enqueue } from '../../infra/queue';
@@ -128,7 +128,12 @@ export async function handleWxPayNotify(rawBody: unknown, headers: Record<string
   // 幂等：已 SUCCESS 直接 ack（架构 §5.2 回调幂等）
   if (payment.status === 'SUCCESS') return { duplicated: true };
 
-  const order = await prisma.orders.findUnique({ where: { id: payment.order_id } });
+  // 取 companion.role 供分账前置隔离（§15.4）；include 保留全部标量字段，
+  // 不改动后续 order.total_amount_fen / order_no 的读取
+  const order = await prisma.orders.findUnique({
+    where: { id: payment.order_id },
+    include: { companion: { select: { role: true } } },
+  });
   if (!order) throw new AppError(14001, '订单不存在');
   // 金额一致性校验（防篡改回调）
   if (payment.amount_fen !== notify.amountFen) {
@@ -166,6 +171,10 @@ export async function handleWxPayNotify(rawBody: unknown, headers: Record<string
     // 3) 冻结分账记录（FROZEN = 订单实收；抽成 bp 快照）
     const commissionRateBp = resolveCommissionRateBp(await getConfigStr('commission_rate'), order.total_amount_fen);
     const commission = computeCommission(order.total_amount_fen, commissionRateBp);
+    // §15.4 分账前置隔离（纵深防御）：非货币结算角色绝不写 profit_sharing_records。
+    // 支付成功时订单可能尚未接单（companion_id 可空），无角色可判则跳过；待接单后
+    // 分账执行仍会复核。本轮两个非货币角色根本无法创建，此门防的是未来误接分账链路。
+    if (order.companion) assertSharingEligible(order.companion.role);
     await tx.profit_sharing_records.create({
       data: {
         sharing_no: genBizNo('sharing'),
@@ -217,6 +226,14 @@ export async function executeSharing(orderId: bigint, trigger: 'complete' | 'ret
   const hasPendingRisk = await prisma.risk_events.count({
     where: { order_id: orderId, status: { in: ['PENDING', 'PROCESSING'] } },
   });
+
+  // §15.12 C11 主防线：分账真正执行前按陪聊员角色隔离。
+  // 支付回调里两处 create 前的断言只兜「极速接单」场景——常规流程支付成功时
+  // companion_id 尚未回填，那两处拿不到角色，不能当主防线。此处订单已 COMPLETED
+  // 必然已接单；用显式判空而非 `order.companion!.role`，避免脏数据下变成不受控
+  // 的 TypeError（与下方缺 openid 抛 13001 的既有口径一致）。
+  if (!order.companion) throw new AppError(13001, '陪聊员主档不存在，不可执行分账');
+  assertSharingEligible(order.companion.role);
 
   // ---- domain 门闩（架构 §8.1）----
   assertSharingGate({
@@ -314,7 +331,11 @@ export async function executeSharing(orderId: bigint, trigger: 'complete' | 'ret
  * 每次回退追加一条 RETURNED 记录（profit_sharing_records 1:N，可回放）。
  */
 export async function refundOrder(orderId: bigint, refundAmountFen: bigint, reason: string, initiator?: string) {
-  const order = await prisma.orders.findUnique({ where: { id: orderId } });
+  // 取 companion.role 供分账前置隔离（§15.4）：已 SHARED 的订单必有接单陪聊员
+  const order = await prisma.orders.findUnique({
+    where: { id: orderId },
+    include: { companion: { select: { role: true } } },
+  });
   if (!order) throw new AppError(14001, '订单不存在');
   if (refundAmountFen <= 0n || refundAmountFen > order.total_amount_fen - order.refund_amount_fen) {
     throw new AppError(15012, '退款金额超出可退额度');
@@ -370,6 +391,8 @@ export async function refundOrder(orderId: bigint, refundAmountFen: bigint, reas
         });
         if (!r.success) throw new AppError(15013, r.errorMessage ?? '分账回退失败');
         returnAmount = refundAmountFen;
+        // §15.4 分账前置隔离：追加 RETURNED 流水同样按角色隔离，非货币角色不进分账流水
+        if (order.companion) assertSharingEligible(order.companion.role);
         await tx.profit_sharing_records.create({
           data: {
             sharing_no: genBizNo('sharing'),
