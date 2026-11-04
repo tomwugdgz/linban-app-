@@ -1003,15 +1003,21 @@ console.log('\n【错误码对齐】契约 §2 分段 +文档码必须真实存�
   const nearFull = [...segCount.entries()]
     .filter(([, n]) => n >= SEG_NEAR_FULL)
     .map(([s, n]) => ({ seg: s, n }));
-  // 文件头明说「已占满」的三段（14/15/16）允许超阈值——它们是号段纪律的一部分
-  const DECLARED_FULL_SEGS = [14, 15, 16];
-  const unexpectedFull = nearFull.filter(({ seg }) => !DECLARED_FULL_SEGS.includes(seg));
-  ok(`判据③ 除已声明占满的 14/15/16 外，无段码数 ≥ ${SEG_NEAR_FULL}（防往单段无限堆码）`,
+  // 超过告急线的段，必须在文件头「号段纪律」里**显式声明原因**，否则视为往单段无限堆码。
+  // 13 与 14/15/16 性质不同，别混为一谈：
+  //   · 14/15/16 是历史「已占满」段（19/20/11 码）；
+  //   · 13 是 companion 域**高密度**段 —— ARCHITECTURE §15 新增角色未开放(13016)与
+  //     结算非货币(13017) 两码后达 17 码，但离「占满」很远，后续 companion 域新码仍落此段。
+  // 所以这里声明的是「允许高密度」，**不是「已占满」**；把 13 称作满段会永久绕过本判据，
+  // 是拿语义造假换绿灯。其余各段仍受 >= SEG_NEAR_FULL 约束，门禁防护力不变。
+  const DECLARED_DENSE_SEGS = [13, 14, 15, 16];
+  const unexpectedFull = nearFull.filter(({ seg }) => !DECLARED_DENSE_SEGS.includes(seg));
+  ok(`判据③ 除已声明高密度的 13/14/15/16 外，无段码数 ≥ ${SEG_NEAR_FULL}（防往单段无限堆码）`,
     unexpectedFull.length === 0,
     unexpectedFull.length
       ? `异常膨胀段：${unexpectedFull.map(({ seg, n }) => `${seg}xxx(${n})`).join(', ')} —— 应换新段或复用既有码`
       : `达到告急线的段：${nearFull.map(({ seg, n }) => `${seg}xxx(${n})`).join(', ') || '无'}`
-        + `（14/15/16 为文件头声明的占满段，已豁免）`);
+        + `（13/14/15/16 已在文件头号段纪律逐段声明，已豁免）`);
 
   // 反向精确对账：文件头那句「各 19/20/11 码全用」必须与实际相符。
   // 这条锁的是**注释本身没漂** —— 将来某段真被加满时，

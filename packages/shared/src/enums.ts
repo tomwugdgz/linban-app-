@@ -760,3 +760,46 @@ export const ACTIVITY_DISPATCH_SCORE_CAP = 100;
 /// 派单同档比较的档宽（bandSize = floor(base_score/10) → 11 档）。
 /// 排序契约常量，**不做后台可调**（主理人裁定），故不入 system_configs。
 export const ACTIVITY_DISPATCH_BAND_SIZE = 10;
+
+// ============================================================================
+// 共享儿子与专业陪护供给角色（架构 §15，2026-11-04 主理人裁定）
+// ----------------------------------------------------------------------------
+// 前半是 schema.prisma 同名 enum 的逐字镜像；后半是跨端常量（三端都要引用，
+// 归 packages/shared 而非服务端 domain 层，避免前端反向依赖，见 §15.4）。
+// 注意：COMPANION_ROLE_LABELS / ROLE_SETTLEMENT_MODE 是「对象且值全为 string」，
+// 会被 enum-mirror.test.ts 的 collectSharedEnums() 收集成枚举，故已登记两处：
+// server 侧 TS_ONLY_ALLOWLIST、admin-web 侧 enum-guard.ts TS_ONLY_CONSTANTS；
+// OPEN_COMPANION_ROLES 是数组，天然被收集器跳过，无需登记。
+// ============================================================================
+
+/// 供给身份（陪聊员主档 companions.role）：四值一次留位，本轮双开放 SHARED_SON + PROFESSIONAL
+export const companion_role = {
+  SHARED_SON: 'SHARED_SON', // 共享儿子（本轮开放，时薪付费）
+  TIME_BANK: 'TIME_BANK', // 时间银行（预留，积分兑换，无真实货币流）
+  VOLUNTEER: 'VOLUNTEER', // 社区志愿者（预留，荣誉+补贴，无真实货币流）
+  PROFESSIONAL: 'PROFESSIONAL', // 专业陪护（本轮开放，高客单付费）
+} as const;
+export type companion_role = (typeof companion_role)[keyof typeof companion_role];
+export const companion_role_values = Object.values(companion_role);
+
+/// 跨端中文标签表（架构 §15.4/§15.9：三端展示统一取此处，禁止各端另写一份）
+export const COMPANION_ROLE_LABELS: Record<companion_role, string> = {
+  SHARED_SON: '共享儿子',
+  TIME_BANK: '时间银行',
+  VOLUNTEER: '社区志愿者',
+  PROFESSIONAL: '专业陪护',
+};
+
+/// 结算模式（架构 §15.4 两进两不进；非货币模式绝不进 profit_sharing_records）
+export type SettlementMode = 'HOURLY_PAID' | 'POINT_EXCHANGE' | 'HONOR_SUBSIDY' | 'PROFESSIONAL_PAID';
+
+/// 角色 → 结算模式映射（架构 §15.4 四角色逐一对应）
+export const ROLE_SETTLEMENT_MODE: Record<companion_role, SettlementMode> = {
+  SHARED_SON: 'HOURLY_PAID',
+  TIME_BANK: 'POINT_EXCHANGE',
+  VOLUNTEER: 'HONOR_SUBSIDY',
+  PROFESSIONAL: 'PROFESSIONAL_PAID',
+};
+
+/// 本轮开放的供给角色（架构 §15.1 C2：SHARED_SON + PROFESSIONAL 双开放）
+export const OPEN_COMPANION_ROLES: readonly companion_role[] = ['SHARED_SON', 'PROFESSIONAL'];

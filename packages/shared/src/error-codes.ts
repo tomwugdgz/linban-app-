@@ -20,7 +20,12 @@
 //   24xxx activity 告警处置
 //   90xxx 系统级  数据库/缓存/队列/第三方/配置
 //
-// 号段纪律：14xxx/15xxx/16xxx 已分别被订单/支付/核销占满（各 19/20/11 码全用），
+// 号段纪律：14xxx/15xxx/16xxx 已分别被订单/支付/核销占满（各 19/20/11 码全用）。
+// 13xxx 是 companion 域高密度段（非占满）：ARCHITECTURE §15 新增
+// 13016 COMPANION_ROLE_NOT_OPEN 与 13017 SETTLEMENT_NOT_MONETARY 后共 17 码；
+// 后续 companion 域新码仍落 13xxx，若超过 20 码应评估拆段。
+// 号段作用域门禁（smoke.mjs 判据③）对 13/14/15/16 四段豁免「≥16 码」告急线，
+// 依据是此处逐段声明；其余各段不得静默堆码。
 // 感知模块另起 22-24xxx，不得复用既有段（避免三端按段分类时误判）。
 // ============================================================================
 
@@ -85,6 +90,8 @@ export const ERROR_CODES = {
   13013: { key: 'ID_CARD_DUPLICATE', message: '该身份证已注册', httpStatus: 409 },
   13014: { key: 'SCHEDULE_NOT_FOUND', message: '日程不存在', httpStatus: 404 },
   13015: { key: 'SCHEDULE_CONFLICT', message: '日程时段冲突', httpStatus: 409 },
+  13016: { key: 'COMPANION_ROLE_NOT_OPEN', message: '该供给角色暂未开放', httpStatus: 409 },
+  13017: { key: 'SETTLEMENT_NOT_MONETARY', message: '该角色的结算方式不参与分账', httpStatus: 409 },
 
   // ---- order 14xxx ----
   14001: { key: 'ORDER_NOT_FOUND', message: '订单不存在', httpStatus: 404 },

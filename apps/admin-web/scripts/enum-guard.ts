@@ -69,6 +69,8 @@ export interface EnumGuardRegistryEntry {
  */
 export const REGISTRY: EnumGuardRegistryEntry[] = [
   { path: 'companions.status', enumName: 'companion_status' },
+  // companions.role：ENUM_FIELD_NAME 正则含 role$，mock 新增该字段后会被自动发现，不登记即打红。
+  { path: 'companions.role', enumName: 'companion_role' },
   { path: 'applications.stage', enumName: 'application_stage' },
   { path: 'applications.realnameStatus', enumName: 'step_status' },
   { path: 'applications.faceStatus', enumName: 'step_status' },
@@ -237,6 +239,12 @@ export function allInEnum(values: string[], allowed: string[]): string[] {
  *   导出是「非数组对象」且「所有值都是 string」→ 形态上像 enum 镜像。
  */
 export const TS_ONLY_CONSTANTS: Record<string, string> = {
+  COMPANION_ROLE_LABELS:
+    '跨端中文标签表（架构 §15.4/§15.9）：三端展示统一取此处，非落库枚举；'
+    + 'schema 侧无同名 enum，形态上像 enum 镜像故登记为纯 TS 常量。',
+  ROLE_SETTLEMENT_MODE:
+    '角色→结算模式映射（架构 §15.4 两进两不进）：非落库枚举；'
+    + 'schema 侧无同名 enum，形态上像 enum 镜像故登记为纯 TS 常量。',
   activity_bonus_reason:
     '落 orders.dispatch_reason_code（VarChar(32) 字符串列），schema 侧刻意不用 enum，避免 ALTER TYPE 锁表',
   COUPON_STATUS:

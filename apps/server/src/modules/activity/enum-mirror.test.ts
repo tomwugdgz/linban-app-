@@ -27,6 +27,12 @@ const SCHEMA_PATH = fileURLToPath(
 
 /** shared 有、schema 无 Prisma enum 对应的合法项（纯 TS 枚举，逐项说明理由） */
 const TS_ONLY_ALLOWLIST: Record<string, string> = {
+  COMPANION_ROLE_LABELS:
+    '跨端中文标签表（架构 §15.4/§15.9）：Record<companion_role, string> 形态，三端展示统一取此处，'
+    + '非落库枚举；schema 侧无同名 enum，故登记为纯 TS 常量。',
+  ROLE_SETTLEMENT_MODE:
+    '角色→结算模式映射（架构 §15.4 两进两不进）：Record<companion_role, SettlementMode>，'
+    + '非落库枚举；schema 侧无同名 enum，故登记为纯 TS 常量。',
   activity_bonus_reason:
     '落 orders.dispatch_reason_code（VarChar(32) 字符串列），schema 侧刻意不用 enum，避免 ALTER TYPE 锁表',
   COUPON_STATUS:
