@@ -1,16 +1,17 @@
 import { Text, View } from '@tarojs/components'
 import { distanceText, fenToYuan, ratingText } from '@/utils/format'
-import type { CompanionPublicDTO } from '@/types'
+import type { CompanionListItem } from '@/types'
+import { COMPANION_ROLE_LABELS } from '@linban/shared'
 
 // ============================================================================
 // 陪聊员卡片（推荐列表/搜索结果）
-// 脱敏口径：只展示昵称/标签/评分/价格/距离（CompanionPublicDTO）
+// 脱敏口径：只展示昵称/标签/评分/价格/距离（CompanionPublicDTO）+ 角色标签（§15.8）
 // ============================================================================
 
 interface Props {
-  companion: CompanionPublicDTO
-  onBook?: (companion: CompanionPublicDTO) => void
-  onClick?: (companion: CompanionPublicDTO) => void
+  companion: CompanionListItem
+  onBook?: (companion: CompanionListItem) => void
+  onClick?: (companion: CompanionListItem) => void
 }
 
 export default function CompanionCard({ companion, onBook, onClick }: Props) {
@@ -29,6 +30,9 @@ export default function CompanionCard({ companion, onBook, onClick }: Props) {
             {companion.distanceM != null ? <Text>· {distanceText(companion.distanceM)}</Text> : null}
           </View>
           <View className="row gap-8" style="flex-wrap: wrap;">
+            <Text className="tag" style="background: var(--brand-light); color: var(--brand);">
+              {COMPANION_ROLE_LABELS[companion.role]}
+            </Text>
             {(companion.tags || []).slice(0, 3).map((t) => (
               <Text key={t} className="tag-plain">
                 {t}

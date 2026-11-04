@@ -27,6 +27,7 @@ import type {
   ApplicationStatusDTO as AppStatus,
 } from '@/types'
 import {
+  companion_role,
   order_status,
   application_stage,
   step_status,
@@ -160,6 +161,8 @@ function seedSelf(): CompanionSelfView {
   return {
     id: 'cmp_1',
     status: companion_status.ACTIVE,
+    // 存量供给默认共享儿子（契约 §15.3 迁移回填口径）
+    role: companion_role.SHARED_SON,
     creditScore: 96,
     limited: false,
     hourlyRateFen: '12000',

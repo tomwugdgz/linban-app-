@@ -28,6 +28,8 @@ import type {
   UserCouponDTO,
 } from '@/types'
 import {
+  companion_role,
+  OPEN_COMPANION_ROLES,
   order_status,
   payment_status,
   profit_sharing_status,
@@ -292,6 +294,9 @@ on('GET', '/companions/nearby', ({ query }) => {
   let list = db.companions.filter((c) => c.status === 'ACTIVE')
   const tag = query.tags
   if (tag) list = list.filter((c) => (c.tags || []).some((t) => t.includes(tag)))
+  // 契约 §15.8：nearby 入参 +role?（可选按角色筛选）
+  const role = query.role
+  if (role) list = list.filter((c) => c.role === role)
   const sort = query.sort || 'distance'
   list = [...list].sort((a, b) => {
     if (sort === 'rating') return Number(b.ratingAvg) - Number(a.ratingAvg)
@@ -314,6 +319,11 @@ on('GET', '/companions/:id', ({ params }) => {
 
 on('POST', '/orders', ({ data }) => {
   const db = getDb()
+  // 契约 §15.8：preferredRole? 仅子女代下单可指定；只接受两个开放值，预留值明确拒绝
+  const preferredRole = (data?.preferredRole ? String(data.preferredRole) : '') as companion_role | ''
+  if (preferredRole && !OPEN_COMPANION_ROLES.includes(preferredRole)) {
+    bizError(13016, '该供给角色暂未开放')
+  }
   const companionId = String(data?.companionId || '')
   const durationMinutes = Number(data?.durationMinutes || 60)
   const serviceDate = String(data?.serviceDate || '')

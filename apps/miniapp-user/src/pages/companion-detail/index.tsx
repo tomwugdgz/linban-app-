@@ -7,6 +7,7 @@ import { fetchCompanionDetail } from '@/services/companion'
 import { useRequireAuth } from '@/utils/hooks'
 import { distanceText, fenToYuan, formatDateCN, formatDateWithWeekday, ratingText } from '@/utils/format'
 import type { CompanionDetail } from '@/types'
+import { COMPANION_ROLE_LABELS } from '@linban/shared'
 
 // ============================================================================
 // 陪聊员详情：资料/标签/评分/价格/可约时段/评价
@@ -70,6 +71,9 @@ export default function CompanionDetailPage() {
           </View>
         </View>
         <View className="row gap-8 mt-16" style="flex-wrap: wrap;">
+          <Text className="tag" style="background: var(--brand-light); color: var(--brand);">
+            {COMPANION_ROLE_LABELS[detail.role]}
+          </Text>
           {(detail.tags || []).map((t) => (
             <Text key={t} className="tag">
               {t}

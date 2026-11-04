@@ -274,14 +274,20 @@ on('GET', '/admin/audit-logs', ({ query }) => {
 // ============================================================================
 const appDetail = (a: (typeof db.applications)[number]) => {
   const comp = db.companions.find((c) => c.id === a.companionId)!;
-  return { ...a, companionName: maskName(comp.name), phoneMasked: maskPhone(comp.phone) };
+  return { ...a, role: comp.role, companionName: maskName(comp.name), phoneMasked: maskPhone(comp.phone) };
 };
 
 on('GET', '/admin/companion-applications', ({ query }) => {
-  let list = db.applications.map((a) => ({ ...a }));
+  // 契约 §15.8：四审列表出参 +role（经 companion.role 读取），可按角色筛选
+  let list = db.applications.map((a) => ({
+    ...a,
+    role: db.companions.find((c) => c.id === a.companionId)?.role,
+  }));
   const stage = q(query, 'stage');
+  const role = q(query, 'role');
   const kw = q(query, 'keyword');
   if (stage) list = list.filter((a) => a.stage === stage);
+  if (role) list = list.filter((a) => a.role === role);
   if (kw) {
     list = list.filter((a) => {
       const comp = db.companions.find((c) => c.id === a.companionId);
@@ -382,9 +388,11 @@ on('POST', '/admin/companion-applications/:no/activate', ({ params }) => {
 on('GET', '/admin/companions', ({ query }) => {
   let list = db.companions.map((c) => ({ ...c, nameMasked: maskName(c.name), phoneMasked: maskPhone(c.phone) }));
   const status = q(query, 'status');
+  const role = q(query, 'role');
   const kw = q(query, 'keyword');
   const creditSort = q(query, 'creditSort');
   if (status) list = list.filter((c) => c.status === status);
+  if (role) list = list.filter((c) => c.role === role);
   if (kw) list = list.filter((c) => contains(c.nameMasked, kw) || contains(c.id, kw));
   if (creditSort === 'asc') list.sort((a, b) => a.creditScore - b.creditScore);
   else if (creditSort === 'desc') list.sort((a, b) => b.creditScore - a.creditScore);

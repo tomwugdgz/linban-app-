@@ -7,6 +7,7 @@
 // ============================================================================
 
 import type {
+  companion_role,
   CompanionPublicDTO,
   ConversationDTO,
   MessageDTO,
@@ -18,6 +19,12 @@ import type {
 } from '@linban/shared'
 
 export type { PageResult }
+
+/**
+ * 陪聊员列表/卡片项（契约 §15.8：GET /companions/nearby 出参每条 +role）
+ * 用交叉类型扩展，避免与 shared 的 CompanionPublicDTO 重复声明冲突。
+ */
+export type CompanionListItem = CompanionPublicDTO & { role: companion_role }
 
 /**
  * IM 会话（端侧扩展）
@@ -75,6 +82,8 @@ export interface LoginUser {
 
 /** 陪聊员详情（公开卡 + 端侧聚合：简介/可约时段/评价） */
 export interface CompanionDetail extends CompanionPublicDTO {
+  /** 供给角色（契约 §15.8：GET /companions/:id 出参 +role） */
+  role: companion_role
   intro: string
   languages: string[]
   slots: ScheduleSlot[]
@@ -123,6 +132,8 @@ export interface CreateOrderRequest {
   remark?: string
   /** 服务边界确认书版本（架构 §10.3 存证） */
   boundaryAgreementVersion: string
+  /** 期望的陪聊角色（契约 §15.8：仅子女代下单可指定，老人直用不传） */
+  preferredRole?: companion_role
 }
 
 /** 微信支付参数（POST /payments/prepay → wx.requestPayment） */

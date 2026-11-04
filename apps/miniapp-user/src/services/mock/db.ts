@@ -21,7 +21,7 @@ import type {
   UserBriefDTO,
   UserCouponDTO,
 } from '@/types'
-import { order_status, im_sender_role, im_message_type, im_review_status } from '@linban/shared'
+import { companion_role, order_status, im_sender_role, im_message_type, im_review_status } from '@linban/shared'
 import { storage } from '@/utils/storage'
 
 const DB_KEY = 'mock_db_v1'
@@ -202,6 +202,8 @@ function seedCompanions(): CompanionDetail[] {
     id: `c_${i + 1}`,
     userId: `u_cmp_${i + 1}`,
     nickname: c.nickname,
+    // 契约 §15.9：用户侧只展示两个开放值；mock 取值均属 companion_role 四值域
+    role: i % 3 === 0 ? companion_role.PROFESSIONAL : companion_role.SHARED_SON,
     avatarUrl: null,
     level: c.level,
     ratingAvg: c.ratingAvg,

@@ -4,7 +4,7 @@
 // 无后端环境下供管理后台完整联调；接真实后端后本目录整体弃用。
 // ============================================================================
 import { ROLE_DEFAULT_PERMISSIONS } from '@/shared/permissions';
-import { SYSTEM_CONFIG_DEFAULTS } from '@linban/shared';
+import { SYSTEM_CONFIG_DEFAULTS, companion_role_values } from '@linban/shared';
 
 function mulberry32(seed: number) {
   let a = seed;
@@ -44,6 +44,8 @@ const pad = (n: number, len: number) => String(n).padStart(len, '0');
 export interface MockCompanion {
   id: string;
   userId: string;
+  /** 供给角色（架构 §15.3：companions.role 四值之一；运营视角可见四值全集） */
+  role: string;
   name: string;
   phone: string;
   status: string;
@@ -66,6 +68,8 @@ export const companions: MockCompanion[] = Array.from({ length: 42 }, (_, i) => 
   return {
     id: String(i + 1),
     userId: String(1000 + i),
+    // 运营视角覆盖四值全集；取值均属 companion_role 枚举（enum-guard 已登记 companions.role）
+    role: companion_role_values[i % companion_role_values.length],
     name: mockNames(1)[0],
     phone: phone(),
     status,

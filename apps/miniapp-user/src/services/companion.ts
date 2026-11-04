@@ -5,17 +5,20 @@
 // ============================================================================
 
 import { http } from './request'
-import type { CompanionDetail, CompanionPublicDTO, PageResult, ReviewDTO } from '@/types'
+import type { CompanionDetail, CompanionListItem, PageResult, ReviewDTO } from '@/types'
+import type { companion_role } from '@linban/shared'
 
-/** 附近陪聊员（距离衰减+标签+信用+等级+评分加权） */
+/** 附近陪聊员（契约 §15.8：入参 +role?、出参每条 +role） */
 export async function fetchNearbyCompanions(params?: {
   tags?: string
   sort?: 'distance' | 'rating' | 'price'
-}): Promise<PageResult<CompanionPublicDTO>> {
+  role?: companion_role
+}): Promise<PageResult<CompanionListItem>> {
   const q = new URLSearchParams()
   if (params?.tags) q.set('tags', params.tags)
+  if (params?.role) q.set('role', params.role)
   q.set('sort', params?.sort || 'distance')
-  return http.get<PageResult<CompanionPublicDTO>>(`/companions/nearby?${q.toString()}`)
+  return http.get<PageResult<CompanionListItem>>(`/companions/nearby?${q.toString()}`)
 }
 
 /** 陪聊员公开卡（含可约时段与评价） */

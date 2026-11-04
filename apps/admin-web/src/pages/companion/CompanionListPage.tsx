@@ -12,10 +12,11 @@ import { useTable } from '@/hooks/useTable';
 import { companionApi } from '@/api/companion';
 import type { Companion } from '@/shared/types';
 import { fmtTime } from '@/shared/format';
-import { COMPANION_STATUS, companion_status } from '@/shared/enums';
+import { COMPANION_ROLE, COMPANION_STATUS, companion_status, companion_role_values, enumColor, enumLabel } from '@/shared/enums';
 
 interface Filters {
   status?: string;
+  role?: string;
   keyword?: string;
   creditSort?: 'asc' | 'desc';
 }
@@ -81,6 +82,7 @@ export function CompanionListPage() {
     { title: '姓名', dataIndex: 'nameMasked', width: 90 },
     { title: '手机号', dataIndex: 'phoneMasked', width: 130 },
     { title: '状态', dataIndex: 'status', width: 100, render: (v: string) => <StatusTag kind="companion" value={v} /> },
+    { title: '角色', dataIndex: 'role', width: 110, render: (v: string) => <Tag color={enumColor(COMPANION_ROLE, v)}>{enumLabel(COMPANION_ROLE, v)}</Tag> },
     { title: '等级', dataIndex: 'level', width: 60, render: (v: number) => `L${v}` },
     { title: '信用分', dataIndex: 'creditScore', width: 100, render: (v: number) => creditTag(v) },
     { title: '时薪', dataIndex: 'hourlyRateFen', width: 90, render: (v: string) => <MoneyText fen={v} /> },
@@ -124,6 +126,15 @@ export function CompanionListPage() {
           value={table.filters.status}
           onChange={(v) => table.search({ status: v })}
         />
+        {/* 运营视角：筛选项可见四值全集（§15.9）；本页无创建/切换角色入口，故不涉及开放值限制 */}
+        <Select
+          allowClear
+          placeholder="角色"
+          style={{ width: 140 }}
+          options={companion_role_values.map((v) => ({ value: v, label: enumLabel(COMPANION_ROLE, v) }))}
+          value={table.filters.role}
+          onChange={(v) => table.search({ role: v })}
+        />
         <Select
           allowClear
           placeholder="信用分排序"
@@ -161,6 +172,7 @@ export function CompanionListPage() {
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label="手机号">{detail.phoneMasked}</Descriptions.Item>
             <Descriptions.Item label="状态"><StatusTag kind="companion" value={detail.status} /></Descriptions.Item>
+            <Descriptions.Item label="角色"><Tag color={enumColor(COMPANION_ROLE, detail.role)}>{enumLabel(COMPANION_ROLE, detail.role)}</Tag></Descriptions.Item>
             <Descriptions.Item label="等级">L{detail.level}</Descriptions.Item>
             <Descriptions.Item label="信用分">{creditTag(detail.creditScore)}</Descriptions.Item>
             <Descriptions.Item label="时薪"><MoneyText fen={detail.hourlyRateFen} /> / 小时</Descriptions.Item>

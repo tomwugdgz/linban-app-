@@ -13,7 +13,7 @@ import { useTable } from '@/hooks/useTable';
 import { applicationApi } from '@/api/application';
 import type { CompanionApplication } from '@/shared/types';
 import { fmtTime } from '@/shared/format';
-import { APPLICATION_ACTION, APPLICATION_STAGE, application_stage, enumLabel, step_status } from '@/shared/enums';
+import { APPLICATION_ACTION, APPLICATION_STAGE, COMPANION_ROLE, application_stage, companion_role_values, enumColor, enumLabel, step_status } from '@/shared/enums';
 
 /** 四审步骤定义（架构 §6.6） */
 const STEPS = [
@@ -49,7 +49,7 @@ const currentStepIndex = (a: CompanionApplication): number => {
 };
 
 export function ApplicationsPage() {
-  const table = useTable<CompanionApplication, { stage?: string; keyword?: string }>({
+  const table = useTable<CompanionApplication, { stage?: string; role?: string; keyword?: string }>({
     fetcher: (params) => applicationApi.list(params),
     initialFilters: { stage: 'APPLIED' },
   });
@@ -97,6 +97,7 @@ export function ApplicationsPage() {
   const columns = [
     { title: '申请单号', dataIndex: 'applicationNo', width: 150 },
     { title: '陪聊员', dataIndex: 'companionName', width: 90 },
+    { title: '角色', dataIndex: 'role', width: 110, render: (v: string) => <Tag color={enumColor(COMPANION_ROLE, v)}>{enumLabel(COMPANION_ROLE, v)}</Tag> },
     { title: '手机号', dataIndex: 'phoneMasked', width: 130 },
     { title: '当前阶段', dataIndex: 'stage', width: 150, render: (v: string) => <StatusTag kind="application" value={v} /> },
     {
@@ -149,6 +150,15 @@ export function ApplicationsPage() {
           value={table.filters.stage}
           onChange={(v) => table.search({ stage: v })}
         />
+        {/* 申请人角色筛选（§15.7）：运营视角可见四值全集 */}
+        <Select
+          placeholder="角色"
+          style={{ width: 140 }}
+          allowClear
+          options={companion_role_values.map((v) => ({ value: v, label: enumLabel(COMPANION_ROLE, v) }))}
+          value={table.filters.role}
+          onChange={(v) => table.search({ role: v })}
+        />
         <Input.Search
           allowClear
           placeholder="申请单号 / 陪聊员"
@@ -181,6 +191,7 @@ export function ApplicationsPage() {
           <>
             <Descriptions column={2} size="small" bordered style={{ marginBottom: 16 }}>
               <Descriptions.Item label="陪聊员">{detail.companionName}</Descriptions.Item>
+              <Descriptions.Item label="角色"><Tag color={enumColor(COMPANION_ROLE, detail.role)}>{enumLabel(COMPANION_ROLE, detail.role)}</Tag></Descriptions.Item>
               <Descriptions.Item label="手机号">{detail.phoneMasked}</Descriptions.Item>
               <Descriptions.Item label="当前阶段"><StatusTag kind="application" value={detail.stage} /></Descriptions.Item>
               <Descriptions.Item label="提交时间">{fmtTime(detail.submittedAt)}</Descriptions.Item>

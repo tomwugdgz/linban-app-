@@ -7,6 +7,7 @@ import { useRequireCompanion } from '@/utils/hooks'
 import { fenToYuan, formatDateTime } from '@/utils/format'
 import { COMPANION_STATUS_META, DEPOSIT_TX_META, CS_PHONE } from '@/constants'
 import type { CompanionSelfView, DepositTxDTO } from '@/types'
+import { COMPANION_ROLE_LABELS } from '@linban/shared'
 
 // ============================================================================
 // 我的（陪聊员主档 + 保证金流水 + 入口）
@@ -43,6 +44,11 @@ export default function ProfilePage() {
             {statusMeta ? `状态：${statusMeta.label}` : '加载中…'} · 信用分 {self?.creditScore ?? '-'}
           </Text>
           <View className="row gap-16" style="flex-wrap: wrap;">
+            {self ? (
+              <View className="tag-plain" style="color: var(--brand);">
+                {COMPANION_ROLE_LABELS[self.role]}
+              </View>
+            ) : null}
             {self?.tags?.map((t) => (
               <View key={t} className="tag-plain">
                 {t}

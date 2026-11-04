@@ -1,7 +1,7 @@
 # 邻伴 · 总体架构设计（ARCHITECTURE）
 
 > **项目**：邻伴 · 社区养老陪伴匹配平台（同城真人陪聊 O2O · 老人线 · 广州单城 MVP）
-> **版本**：v1.8 ｜ 2026-10 ｜ **作者**：顾图南（Silas Frame）｜ **团队**：rnd-linban（主理人：岑执衡）
+> **版本**：v1.9 ｜ 2026-11-04 ｜ **作者**：顾图南（Silas Frame）｜ **团队**：rnd-linban（主理人：岑执衡）
 > **上游依据**：《邻伴·社区养老陪伴匹配方案》v1.0（2026-09-19）战略稿
 > **性质**：架构设计文档。只做设计，不含业务代码实现；代码结构建议到目录级。
 
@@ -11,10 +11,10 @@
 
 | 读者 | 建议重点阅读 |
 |---|---|
-| 主理人 / 产品 | §1 概览、§7 支付分账、§8 防飞单、§12 里程碑、§13 健康活动感知、§14 风险 |
-| 后端开发 | §4 模块划分、§5 数据架构、§6 链路时序、§7 分账、附录 B |
-| 小程序开发 | §3 选型、§6 链路、§9 第三方清单 |
-| 管理后台开发 | §3.5、§4.1 中 admin/risk 模块、附录 B |
+| 主理人 / 产品 | §1 概览、§7 支付分账、§8 防飞单、§12 里程碑、§13 健康活动感知、§14 风险、**§15 供给角色** |
+| 后端开发 | §4 模块划分、§5 数据架构、§6 链路时序、§7 分账、**§15.4–15.6**、附录 B |
+| 小程序开发 | §3 选型、§6 链路、§9 第三方清单、**§15.9** |
+| 管理后台开发 | §3.5、§4.1 中 admin/risk 模块、**§15.9**、附录 B |
 | 运维 / 交付 | §11 部署、§12 里程碑 |
 
 本文所有结论均可回溯到三处来源：**客户拍板决策**（见 §1.2）、**团队技术现状**（React + Vite + Express + TypeScript，Node 部署）、**微信/腾讯云官方能力边界**（见 §9）。凡与上述冲突处，以 §14 开放问题登记，不在正文臆测。
@@ -1199,6 +1199,7 @@ graph TD
 | R9 | **健康活动感知误判**（久静=出门而非不适；单通道噪声） | 告警疲劳→触达失效，或错误干预伤害信任 | 强制双通道交叉验证（§13.4，单通道不得下"不健康"结论）；告警分级+抑制窗口；紧急先人工确认；误报可统计可调阈值 | 产品 + 后端 |
 | R10 | **隐私舆情**（「装个 APP 就被监视」） | 伤害核心卖点与信任 | 无摄像头声明 + 老人隐私中心可见「谁在看我」+ 一键关 + 原始特征不出户（§13.6）；BSSID 只落 HMAC | 产品 + 法务 |
 | R11 | 通道 B（网关/算法）进度不可控 | W+1 延期 | MVP 零硬件、通道 B 仅协议预留（§13.7）；通道 A 独立可用，不被硬件绑架 | 架构 |
+| R12 | **非货币角色污染分账流水**（时间银行/志愿者若误接分账，产生虚假应付款与对账缺口） | 资金事故 + 合规瑕疵 | §15.4 结算隔离：`ROLE_SETTLEMENT_MODE` 纯函数 + `canEnterProfitSharing` + `assertSharingEligible` 前置门闩（纵深防御，本轮两角色尚不可创建）；单测显式断言四角色 | 后端 |
 
 ### 14.2 开放问题（需主理人/客户拍板）
 
@@ -1215,6 +1216,201 @@ graph TD
 | Q9 | **免费层 vs 高级层功能边界**（¥0 vs ¥49/月） | ✅ **已裁定（2026-10，岑执衡）**：采纳并加一处**刻意偏离**——**安全兜底（久静/离线的客服人工处置与外呼）必须留在免费层，不设付费墙**（平台安全责任不因用户免费而降级；否则免费用户出事平台不兜底，舆情与合规风险全归平台）。免费层=基础日报+在家/外出判断+**安全兜底人工处置**；付费层（¥49/月）=主动预警（跌倒疑似/异常行为/夜间异常）+ AI 健康分析 + 历史回溯 + 多成员管理。**此划分与 duckwolf 独立售卖档位有一处不同，原因是邻伴承担平台安全责任**（详见 §13.12） |
 | Q10 | **派单加权具体权重口径**（LOW/STILL 加成） | ✅ **已裁定（2026-10，岑执衡）**：采用**加分数制**——base_score 沿用既有 scoreDispatchCandidate（五因子不动），activity_bonus LOW **+5** / STILL **+10**；**先按 base_score 分档（floor(base/10)，11 档）分组，组内按 base+bonus 降序，加成不得跨档**；展示落库分 min(base+bonus,100)；落库三列 base_score / activity_bonus / activity_bonus_reason（ACTIVITY_LOW / ACTIVITY_STILL / NONE）可审计可申诉；**服务半径硬约束不变**（半径外不参与同档比较）；监控：加成候选拒单率上升 &gt;5pct 则该维度下线。配置键改名为 `activity_dispatch_bonus_low/still`（INT 5/10）。完整落法见 §13.12② |
 | Q11 | **告警是否落 complaints 工单表** | ✅ **已裁定（2026-10，岑执衡）**：W-MVP **不动 complaints schema**——健康告警全流程在 `health_alerts` 自闭环（状态机 + ack_by/ack_at/处置结论），客服工作台直接读 health_alerts；仅需对外追责或赔付时人工补单，补单用**系统服务账号**兜底 complainant_id（audit_logs 留痕）。W+1 备选 schema 放宽（见 §13.12④） |
+
+---
+
+## 15. 共享儿子与专业陪护供给角色（2026-11-04 主理人裁定）
+
+> **上游依据**：[STRATEGY-2026-09-19.md](STRATEGY-2026-09-19.md) §2.3 四位一体供给模型、[PRD-SHARED-SON.md](PRD-SHARED-SON.md)。
+> **性质**：本章是**工程契约（单一事实源）**。数据层 / 服务端 / 三端并行施工均以此为准；PRD 只写产品口径与验收，不重复工程定义。
+> **状态**：本轮施工范围已定，代码落地中。
+
+### 15.1 裁定摘要（含相对 PRD v1.0 的口径变更）
+
+| # | 裁定 | 说明 |
+|---|---|---|
+| C1 | 新增 `companion_role` 枚举，**四值一次留位** | `SHARED_SON` / `TIME_BANK` / `VOLUNTEER` / `PROFESSIONAL` |
+| C2 | **本轮双开放：`SHARED_SON` + `PROFESSIONAL`** | ⚠️ **口径变更**：PRD v1.0 §5 写「本轮只开放共享儿子」；主理人 2026-11-04 追加「把共享儿子以及照顾等业务也计入」，故专业陪护同步开放。PRD 须同步修订 |
+| C3 | `TIME_BANK` / `VOLUNTEER` **只留位、不可创建、绝不进分账流水** | 二者无真实货币流（积分兑换 / 荣誉补贴） |
+| C4 | `service_type` **本轮不动** | 仍 `CHAT` / `ACCOMPANY`；照护业务不新增服务类型，见 §15.2 |
+| C5 | `application_stage` **十态禁止增删** | 角色差异只体现为「审核项按角色判定」，不改状态机 |
+| C6 | `rankDispatchCandidates` **签名与行为完全不动** | 沿用 v1.6 既定纪律，角色偏好由独立排序器承担，见 §15.5 |
+| C7 | `companions` 表新增 `role` 列，角色是**陪聊员主档属性** | `companion_applications` 不冗余 role 列，经 relation 读取，避免双写漂移 |
+
+### 15.2 三维度正交（为什么照护业务不新增 `service_type`）
+
+| 维度 | 载体 | 回答的问题 | 本轮是否改动 |
+|---|---|---|---|
+| **供给身份** | `companions.role`（新增） | 这位陪伴者**是什么角色**、走什么结算路径 | ✅ 新增 |
+| **服务类型** | `orders.service_type`（既有） | 这一单**是哪类服务**（CHAT / ACCOMPANY） | ❌ 不动 |
+| **能力标签** | `companions.tags`（既有 Json） | 这位陪伴者**会什么**（粤语 / 棋牌 / 陪诊 / 康复辅助） | ❌ 不动 |
+
+**裁定理由**：就医陪诊、康复辅助、健康监测等「照顾类业务」属**能力标签 + 供给身份**的组合（`PROFESSIONAL` + tags `["陪诊"]`），不是新服务类型。若为此扩 `service_type`，会连带扰动订单状态机、计价口径、`enum-mirror` 门禁与 API 契约，收益仅为标签化，代价不对称。
+
+> **用词边界**：`PROFESSIONAL` 角色允许「陪诊 / 康复辅助 / 健康监测」；`SHARED_SON` 角色**禁用**「护理 / 照护」。两者均**禁止**「喂食 / 洗澡 / 如厕」等身体接触类护理（对齐 Papa 服务边界，见战略稿 §1.3）。
+
+### 15.3 枚举与落库形态
+
+```prisma
+enum companion_role {
+  SHARED_SON    // 共享儿子（本轮开放，时薪付费）
+  TIME_BANK     // 时间银行（预留，积分兑换，无真实货币流）
+  VOLUNTEER     // 社区志愿者（预留，荣誉+补贴，无真实货币流）
+  PROFESSIONAL  // 专业陪护（本轮开放，高客单付费）
+}
+
+model companions {
+  // ...既有字段不动...
+  role  companion_role  @default(SHARED_SON)
+  @@index([status, role])
+}
+```
+
+**方案对比（落库形态为何选 Prisma enum 而非 String）**：
+
+| 方案 | 优点 | 缺点 | 裁定 |
+|---|---|---|---|
+| **Prisma enum** | 强类型；`enum-mirror.test.ts` 自动守 schema↔shared 一致，无需新写门禁；四值一次定死 | 后续加值需 `ALTER TABLE` | ✅ **采用** |
+| `String` + `TS_ONLY_ALLOWLIST` | 加值不改表结构（仓库里 `activity_bonus_reason` / `coupons.status` 用此方案） | 失去类型约束；需额外登记且门禁只守「登记」不守「取值」 | ❌ 不采用 |
+
+**关键区别**：既有 String 方案用于**已有投放数据、取值会频繁演进**的高频列；本轮是**新建列**、四值一次留位，不存在历史数据锁表风险，故按仓库主流纪律走 enum + shared 镜像。
+
+**迁移**：`ALTER TABLE companions ADD COLUMN role ENUM(...) NOT NULL DEFAULT 'SHARED_SON'` + `CREATE INDEX`。存量陪聊员一律回填 `SHARED_SON`（语义：既有供给即共享儿子），**不写 NULL、不做二次人工改正**。
+
+**共享包镜像**：`packages/shared/src/enums.ts` 增加 `companion_role` const + `companion_role_values`，命名/值/顺序/注释与 schema 逐字一致（enum-mirror 门禁要求）。`apps/admin-web/scripts/enum-guard.ts` 的 `REGISTRY` 登记 `companions.role`（注意 `ENUM_FIELD_NAME` 正则含 `role$`，该字段会被自动发现，不登记即打红）。
+
+### 15.4 结算隔离（两进两不进 · 硬要求）
+
+| 角色 | 结算模式常量 | 真实货币流 | 是否进 `profit_sharing_records` |
+|---|---|---|---|
+| `SHARED_SON` | `HOURLY_PAID` | ✅ | ✅ **进** |
+| `PROFESSIONAL` | `PROFESSIONAL_PAID` | ✅ | ✅ **进** |
+| `TIME_BANK` | `POINT_EXCHANGE` | ❌ | ❌ **绝不进** |
+| `VOLUNTEER` | `HONOR_SUBSIDY` | ❌ | ❌ **绝不进** |
+
+**跨端常量归 `packages/shared`**（三端都要引用，放服务端 domain 层会造成前端反向依赖）：
+
+```ts
+// packages/shared/src/enums.ts（或 shared 新文件，须从 index 导出）
+COMPANION_ROLE_LABELS: Record<companion_role, string>   // SHARED_SON→「共享儿子」/ PROFESSIONAL→「专业陪护」/ …
+ROLE_SETTLEMENT_MODE: Record<companion_role, SettlementMode>
+OPEN_COMPANION_ROLES: readonly companion_role[] = ['SHARED_SON', 'PROFESSIONAL']
+```
+
+> ⚠️ **门禁陷阱**：`apps/server/src/modules/activity/enum-mirror.test.ts` 的 `collectSharedEnums()` 会把 shared 里「对象且值全为 string」的导出都收集成枚举。`COMPANION_ROLE_LABELS` 与 `ROLE_SETTLEMENT_MODE` 正好命中，因此**必须**在该测试的 `TS_ONLY_ALLOWLIST` 里逐项登记并写明非空理由（例如「跨端中文标签表，非落库枚举」「角色→结算模式映射，非落库枚举」），否则 `shared 有但 schema 无` 直接打红。`OPEN_COMPANION_ROLES` 是数组，天然被跳过，无需登记。
+
+**服务端纯函数契约**（`apps/server/src/domain/companion-role.ts`，零 IO，配 `.test.ts`）：
+
+```ts
+isOpenCompanionRole(role): boolean
+isMonetarySettlement(role): boolean
+canEnterProfitSharing(role): boolean   // = isOpen && isMonetary
+assertOpenCompanionRole(role): void    // 未开放 → AppError(13016)
+assertSharingEligible(role): void      // 非货币 → AppError(13017)
+ROLE_MATCH_BONUS / roleMatchBonus / rankByCompanionRole  // 见 §15.5
+```
+
+**落点**：`payment.service.ts` 在 `profit_sharing_records.create()` **之前**调用 `assertSharingEligible(companion.role)`。本轮两个非货币角色根本无法创建，此门是**纵深防御**——防止未来开放时误接分账链路。与 §14.2 **Q8 账务隔离**裁定同源纪律。
+
+**单测必须证明**：四个角色逐一断言 `canEnterProfitSharing`，且非货币角色的「不进分账」是显式断言而非靠默认分支蒙混。
+
+### 15.5 角色化派单（不得破坏既有出口）
+
+**硬约束**：`apps/server/src/domain/dispatch.ts` 的 `DISPATCH_WEIGHTS` 总和须为 100（`dispatch.test.ts:69` 有断言），`rankDispatchCandidates` 签名与行为**完全不动**（修订记录 v1.6 已裁定「活动加成由独立排序器 `rankByActivity` 承担，保既有出口零破坏」）。
+
+**实现范式**：新增独立纯函数，与 `rankByActivity` 同层：
+
+```ts
+// apps/server/src/domain/companion-role.ts
+export const ROLE_MATCH_BONUS = 8;   // 角色命中加成分（≤ 档宽 10，见 §15.12 C10）
+export function roleMatchBonus(candidateRole: companion_role, preferredRole?: companion_role | null): number
+export function rankByCompanionRole<T extends { role: companion_role }>(
+  items: readonly T[], preferredRole?: companion_role | null, baseScoreOf?: (item: T) => number
+): T[]
+```
+
+- 未指定 `preferredRole` → 全部加成 0 → **排序结果与改造前逐字一致**（既有单测零回归）
+- 指定时：命中角色 **+8 分**（`ROLE_MATCH_BONUS`，≤ 档宽 10，见 §15.12 C10），**仅在同分档内生效，不得跨档**（复用 §13.12 Q10「加成不得跨档」纪律）
+- 加成**不写入 `DISPATCH_WEIGHTS`**、不改 `scoreDispatchCandidate`
+
+> 若实现方认为需要改动 `rankDispatchCandidates` 签名，须先向主理人申请变更本章裁定，**不得自行改动**。
+
+### 15.6 入驻校验与错误码
+
+| 码 | key | message | HTTP |
+|---|---|---|---|
+| `13016` | `COMPANION_ROLE_NOT_OPEN` | 该供给角色暂未开放 | 409 |
+| `13017` | `SETTLEMENT_NOT_MONETARY` | 该角色的结算方式不参与分账 | 409 |
+
+- `POST /companion/applications` 入参加 `companionRole`：zod **接受四值全集**（`companion_role_values`），由 service 层 `assertOpenCompanionRole()` 统一判定
+- **理由**：把「字段格式错」(10001) 与「角色未开放」(13016) 分开；未来开放新角色只改 service 白名单，不动 zod 契约
+- 提交 `TIME_BANK` / `VOLUNTEER` 必须**明确拒绝**，不得静默回落为 `SHARED_SON`
+- 错误码须同步 `packages/shared/src/error-codes.ts` 与 `docs/API-CONTRACT.md` §2 错误码速查表（逐字对齐）
+
+### 15.7 四审流：不新增状态，只按角色判定审核项
+
+`application_stage` 十态与 `step_status` **禁止增删**。本轮仅实现：审核台列表**可见申请人角色**（经 `application → companion.role` 读取）、可按角色筛选。`PROFESSIONAL` 的资格证核验、保险绑定等**差异化必审项**列入 W+1，本轮不实现完整分岔逻辑。
+
+### 15.8 接口变更清单
+
+| 端点 | 变更 |
+|---|---|
+| `POST /companion/applications` | 入参 +`companionRole`（必填，四值域） |
+| `GET /companion/me` | 出参 +`role` |
+| `GET /companions/nearby` | 入参 +`role?`（可选筛）；出参每条 +`role` |
+| `GET /companions/:id` | 出参 +`role` |
+| `POST /orders` | 入参 +`preferredRole?`（子女代下单可指定；**老人直用不传**）；**落 `orders.preferred_role` 可空列**（见 §15.12 C8） |
+| `GET /admin/companions` | 入参 +`role?`（四值全集，运营视角）；出参 +`role`。⚠️ 该端点契约 §5.7.4 已登记、`admin-web/src/api/companion.ts:7` 已调用，但**服务端未实现**，属既有缺口，见 §15.12 C12 |
+| 后台四审列表 | 出参 +`role` |
+
+> 所有出参字段须同步 `docs/API-CONTRACT.md` 字段级出参表；新增端点为零，本轮**不新增路径**，故不触发路径对账门禁变更。
+
+### 15.9 文案与适老化红线
+
+- 沿用 `PRD-SHARED-SON.md` §3.2 话术红线表；中文标签统一取 `COMPANION_ROLE_LABELS`，**禁止三端各写一份**
+- `SHARED_SON` → 「共享儿子」；`PROFESSIONAL` → 「专业陪护」
+- 用户端**老人直用路径不得新增任何操作步骤**（角色默认值由服务端兜底）；角色选择只发生在子女代下单路径
+- 管理后台可见四值全集（运营需看完整供给结构），但**创建/切换只允许两个开放值**
+- 双小程序**用户侧**只展示两个开放值，预留值不做灰掉不可选项（避免困惑）
+
+### 15.10 验收清单
+
+| # | 标准 | 验证方式 |
+|---|---|---|
+| 1 | schema ↔ shared 枚举镜像逐字一致；两个跨端常量已登记 `TS_ONLY_ALLOWLIST` 且理由非空 | `enum-mirror.test.ts` 全绿 |
+| 2 | `enum-guard` 已登记 `companions.role`，理由非空 | 门禁输出 PASS |
+| 3 | 四角色结算隔离显式断言 | 新增 `companion-role.test.ts` 全绿 |
+| 4 | 提交预留角色返回 `13016` | 路由/服务层单测 |
+| 5 | 角色加成不改权重、既有 `dispatch.test.ts` 零回归 | 既有单测全绿 |
+| 6 | 分账创建前调用 `assertSharingEligible` | 服务端单测 + 代码审查 |
+| 7 | 老人直用步骤数不增 | 前端流程核对 |
+| 8 | 全量文案无禁用词 | 抽检 |
+| 9 | **无新增门禁失败** | `npm run verify:all` 失败项 ≤ 5 且均为已知既有项 |
+
+> ⚠️ **门禁基线说明**：2026-10-30 取样 `npm run verify:all` = `PASS 8 / FAIL 5`（服务端 `admin.service.ts` 返回类型缺 `windowDays`、3 个 vitest 契约测试、`miniapp-user` tsconfig target 与 BigInt 字面量冲突），全部来自初始化提交 `0331c5a`，**属既有问题**。本轮验收不要求全绿，要求「不新增失败」。
+
+### 15.11 本轮不做
+
+- 时间银行 / 社区志愿者的实际功能、积分账本、荣誉补贴发放
+- `PROFESSIONAL` 差异化四审分岔（资格证核验、保险绑定）
+- 新增 `service_type` 值、新增订单状态、新增端点路径
+- 角色化定价（本轮两类付费角色共用既有 `hourly_rate_fen` 与抽成规则）
+
+### 15.12 施工复核修订（2026-11-04，主理人裁定）
+
+首轮三组并行施工后复核，发现契约有 4 处不闭环，逐条裁定如下。**本节优先于前文同条款**。
+
+| # | 问题 | 裁定 |
+|---|---|---|
+| C8（**维持补列**） | `preferredRole` 只有入参、无落库、派单未接线 → 「子女指定角色」实际不生效 | ✅ **补落库**：`orders` 增 `preferred_role companion_role?`（**可空、无默认值**；NULL = 未指定），新增迁移。**裁定反复记录**：复核中曾据「`dispatchOrder` 无调用点、`sweepDispatchTimeout` 不自动重派」一度改判「不落库」，该推理方向是错的——`dispatchOrder(orderId: bigint)` **只接 ID、从 DB 读订单**，恰是「下单与派单解耦」的证据，解耦越彻底偏好越**必须落库**才能传进派单函数；只有同步同请求调用才可传参不落库。另可空列作为「下单时指定了什么角色」的审计留痕本身有价值。故恢复补列，不再翻转 |
+| C9 | 前端已发 `preferredRole` 而服务端不收、派单不用 → 字段悬空 | **服务端收下并接到排序器**：`POST /orders` zod 增 `preferredRole?`（四值域）写入 `orders.preferred_role`；`order.service.ts:503` 从 `order.preferred_role` 取值传入 `rankByCompanionRole`。`rankDispatchCandidates` **仍零改动**；调用侧组合：全量候选 → `candidateEligible` 硬过滤不得绕过 → 按 `scoreDispatchCandidate` 基础分分档（档宽 10）→ 组内加 `ROLE_MATCH_BONUS` → Top5。未指定时排序结果与改造前**逐字一致** |
+| C10 | `ROLE_MATCH_BONUS = 12` > 档宽 10 → 角色命中恒压过基础分，与 PRD「**同等条件下**优先」不符 | 改为 **8**（≤ 档宽 10）；§15.5 已同步。基础分差 9 分仍能压过加成，语义正确 |
+| C11 | `payment.service.ts` 两处 `profit_sharing_records.create()` 加了 `assertSharingEligible`，但支付回调时 `orders.companion_id` 通常尚未回填 → 门闩常规流程**不触发**；真正执行分账的 `executeSharing()` 无角色断言 | **`executeSharing()`（约 206 行，已 `include: { companion }`）在 `assertSharingGate` 之前补主防线**。实际落法比原裁定更严：先 `if (!order.companion) throw new AppError(13001, '陪聊员主档不存在，不可执行分账')` 显式判空，再 `assertSharingEligible(order.companion.role)`；**不用 `!` 非空断言**，避免脏数据下变成不受控 TypeError（与同函数缺 openid 抛 13001 的既有口径一致）。前两处保留为「极速接单」场景的纵深防御，但**不得被当作主防线** |
+| C12 | `GET /admin/companions` 服务端未实现 | 属**既有缺口**（契约 §5.7.4 与 `admin-web/src/api/companion.ts:7` 已登记/调用，服务端路由缺失），**本轮不补**，避免扩大范围；后台角色筛选走 mock 层。作为遗留项在交付报告列明 |
+
+**号段门禁适配（C13）**：§15.6 新增 13016/13017 后 13xxx 达 17 码，撞上 `smoke.mjs` 判据③ 的 `SEG_NEAR_FULL=16` 告急线。裁定**不把 13 伪称为「已占满」**（那会永久绕过判据），而是把 `DECLARED_FULL_SEGS` 更名为 `DECLARED_DENSE_SEGS = [13,14,15,16]`，如实声明为「允许高密度段」；`error-codes.ts` 文件头补 13xxx 实情与「超 20 码再评估拆段」规则。**其余各段仍受 ≥16 约束，门禁防护力不削弱**。已实测 `✓ 判据③` 转绿，`smoke.mjs` 由 `227/5` 改善为 `228/4`。
+
+**既有缺口 C14（本轮不补，交付须列明）**：`apps/server/src/modules/order/order.service.ts:400` 的 `dispatchOrder(orderId)` **全仓仅定义、无任何调用点**；`:839` 的 `sweepDispatchTimeout()` 明写「MVP：不自动改状态，登记待人工」。即**端到端自动派单触发链路在本轮之前就未接通**。本轮 C8/C9 只保证「偏好落库 → 排序器取值」的代码路径完整，**不宣称自动派单已端到端生效**。补齐需引入队列/定时器触发，超出本轮范围。
 
 ---
 
@@ -1276,6 +1472,7 @@ graph TD
 
 | 版本 | 日期 | 内容 | 触发来源 |
 |---|---|---|---|
+| v1.9 | 2026-11-04 | ① **新增 §15「共享儿子与专业陪护供给角色」工程契约**——`companion_role` 四值一次留位、**本轮双开放 `SHARED_SON` + `PROFESSIONAL`**（主理人追加「照顾等业务也计入」，相对 PRD v1.0 的口径变更已入档）；② 裁定三维度正交、`service_type` 本轮不动（照护业务走 role + tags，不扩服务类型以免扰动订单状态机与计价）；③ 落库形态选 Prisma enum 并写明与既有 String 方案的适用边界差异；④ §15.4 结算隔离两进两不进，与 Q8 账务隔离同源；⑤ **§15.5 明确 `rankDispatchCandidates` 签名与行为零改动**，沿用 v1.6「独立排序器」纪律，角色加成走 `rankByCompanionRole` 且不改 `DISPATCH_WEIGHTS`（`dispatch.test.ts:69` 断言总和 100）；⑥ 新增错误码 13016/13017、四审十态禁止增删、接口变更清单、验收 9 条含门禁基线口径；⑦ §0 导读补 §15 指向；⑧ §14 新增 R12（非货币角色污染分账流水） | 岑执衡派单（客户 Tom「共享儿子以及照顾等业务也计入」）；顾图南契约裁定 |
 | v1.0 | 2026-09 | 初版 | 岑执衡派单 |
 | v1.1 | 2026-09 | ① §5.1 补 penalty_records / file_meta / role_permissions 三表，新增「数据访问三态纪律」；② 全文引用统一《DATABASE.md》，§5.1 声明 schema.prisma 为可执行事实源；③ 附录 C 修正 deposit_amount 单位（50000 分）；④ §5.3 背书 GPS 模糊化即脱敏；⑤ §7.6/附录 C 录入分账模式开关裁定 SPLIT_MODE；⑥ §6.1/§6.2/§6.5/§10.3/附录 C 同步主理人裁定③（安全挂起：ACCEPTED/ARRIVED/IN_SERVICE → SUSPENDED 三边 + SOS/服务超时/IM 静默三触发器）与裁定④（夜间单子女确认守卫及豁免口径） | 宋砚秋表清单同步、岑执衡裁定②③④ |
 | v1.2 | 2026-10 | ① 新增 §13「健康活动感知模块（Wi-Fi 无感感知 + 引流增长引擎）」：数据流、activity 模块划分与零循环依赖、双通道统一口径、告警与误判处置、8 条隐私红线落地、W-MVP/W+1/W+2 分级、库表清单、API 面、状态与错误码（§13.1–13.11）；② §4.1 新增 activity 模块（14 业务模块 + 2 支撑）；③ 原 §13 风险与开放问题重编号为 §14，新增 R9–R11 与 Q8–Q10；④ 附录 C 新增 10 项 activity 配置键；⑤ §6.2/§10.3 action 命名统一为下划线（sos_suspend/auto_suspend/suspend） | 岑执衡派单（客户 Tom 追加需求 duckwolf Wi-Fi 感知）；命名收敛自霍承钧 4:1 依据 |

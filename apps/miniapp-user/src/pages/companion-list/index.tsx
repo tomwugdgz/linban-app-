@@ -6,7 +6,7 @@ import CompanionCard from '@/components/companion-card'
 import EmptyState from '@/components/empty-state'
 import { fetchNearbyCompanions } from '@/services/companion'
 import { useRequireAuth } from '@/utils/hooks'
-import type { CompanionPublicDTO } from '@/types'
+import type { CompanionListItem } from '@/types'
 
 // ============================================================================
 // 陪聊员列表：排序（距离/评分/价格）+ 标签筛选
@@ -26,7 +26,7 @@ export default function CompanionListPage() {
   const elderUserId = router?.params?.elderUserId // 子女代下单入口带入
   const [sort, setSort] = useState<'distance' | 'rating' | 'price'>('distance')
   const [tag, setTag] = useState('全部')
-  const [list, setList] = useState<CompanionPublicDTO[]>([])
+  const [list, setList] = useState<CompanionListItem[]>([])
 
   const load = async () => {
     const res = await fetchNearbyCompanions({

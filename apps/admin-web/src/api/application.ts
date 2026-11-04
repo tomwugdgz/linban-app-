@@ -3,7 +3,7 @@ import { http } from './request';
 import type { CompanionApplication, PageQuery, PageResult } from '@/shared/types';
 
 export const applicationApi = {
-  list(params: PageQuery & { stage?: string; keyword?: string }) {
+  list(params: PageQuery & { stage?: string; role?: string; keyword?: string }) {
     return http.get<PageResult<CompanionApplication>>('/admin/companion-applications', params);
   },
   detail(applicationNo: string) {

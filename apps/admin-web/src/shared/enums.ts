@@ -6,6 +6,10 @@
 //       本文件只补 UI 标签与语义色，值域不再本地硬编码。
 // ============================================================================
 import {
+  companion_role,
+  companion_role_values,
+  COMPANION_ROLE_LABELS,
+  OPEN_COMPANION_ROLES,
   activity_channel,
   activity_consent_scope_level,
   activity_consent_status,
@@ -47,6 +51,10 @@ import { COUPON_STATUS as COUPON_STATUS_VALUES } from '@linban/shared';
 
 /** 共享包原始枚举再出口（页面需要枚举值/类型时从这里取，避免多处 import） */
 export {
+  companion_role,
+  companion_role_values,
+  COMPANION_ROLE_LABELS,
+  OPEN_COMPANION_ROLES,
   activity_channel,
   activity_consent_scope_level,
   activity_consent_status,
@@ -184,6 +192,18 @@ export const COMPANION_STATUS: LabelMap = build([
   [companion_status.SUSPENDED, '暂停接单', 'warning'],
   [companion_status.BANNED, '已封禁', 'error'],
   [companion_status.RETIRED, '已退出', 'default'],
+]);
+
+/**
+ * 陪聊员供给角色（架构 §15）。中文标签统一取 shared 的 COMPANION_ROLE_LABELS
+ * （§15.9 禁止三端各写一份），本文件只补 UI 语义色。
+ * 运营视角筛选项可见四值全集 companion_role_values；创建/切换只允许 OPEN_COMPANION_ROLES。
+ */
+export const COMPANION_ROLE: LabelMap = build([
+  [companion_role.SHARED_SON, COMPANION_ROLE_LABELS[companion_role.SHARED_SON], 'blue'],
+  [companion_role.PROFESSIONAL, COMPANION_ROLE_LABELS[companion_role.PROFESSIONAL], 'purple'],
+  [companion_role.TIME_BANK, COMPANION_ROLE_LABELS[companion_role.TIME_BANK], 'default'],
+  [companion_role.VOLUNTEER, COMPANION_ROLE_LABELS[companion_role.VOLUNTEER], 'default'],
 ]);
 
 // ---- 黑名单 ----

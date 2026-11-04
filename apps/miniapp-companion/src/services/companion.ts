@@ -7,6 +7,7 @@
 
 import { http } from './request'
 import type {
+  companion_role,
   ApplicationStatusDTO,
   CompanionSelfView,
   CreditLogDTO,
@@ -24,6 +25,8 @@ export async function submitApplication(payload: {
   hourlyRateFen: string
   serviceRadiusM: number
   tags: string[]
+  /** 供给角色（契约 §15.8：POST /companion/applications 入参 +companionRole，四值域） */
+  companionRole: companion_role
 }): Promise<ApplicationStatusDTO> {
   return http.post<ApplicationStatusDTO>('/companion/applications', payload as unknown as Record<string, unknown>)
 }

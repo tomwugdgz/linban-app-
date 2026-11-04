@@ -11,6 +11,7 @@ import { useRequireAuth } from '@/utils/hooks'
 import { fenToYuan, formatDateCN, formatDateWithWeekday, durationText } from '@/utils/format'
 import { BOUNDARY_AGREEMENT_VERSION, DURATION_OPTIONS } from '@/constants'
 import type { CompanionDetail, GiftCardDTO, UserCouponDTO } from '@/types'
+import { COMPANION_ROLE_LABELS, OPEN_COMPANION_ROLES, companion_role } from '@linban/shared'
 
 // ============================================================================
 // 预约流程（4 步）：选日期时段 → 选时长 → 时长卡/优惠券抵扣 → 确认并支付
@@ -41,6 +42,8 @@ export default function BookingPage() {
   const [agreed, setAgreed] = useState(false)
   const [paying, setPaying] = useState(false)
   const [confirmPay, setConfirmPay] = useState(false)
+  // 子女代下单可指定角色；空串表示「不指定」（§15.9：老人直用不出现该步骤）
+  const [preferredRole, setPreferredRole] = useState<companion_role | ''>('')
 
   useEffect(() => {
     if (!companionId) return
@@ -90,6 +93,8 @@ export default function BookingPage() {
         userCouponId: couponId || undefined,
         address,
         boundaryAgreementVersion: BOUNDARY_AGREEMENT_VERSION,
+        // 契约 §15.8：老人直用不传 preferredRole；子女代下单可指定（默认不指定）
+        ...(elderUserId && preferredRole ? { preferredRole } : {}),
       })
       await payOrder(order.id)
       Taro.showToast({ title: '支付成功', icon: 'success' })
@@ -255,6 +260,29 @@ export default function BookingPage() {
             <View className="row-between">
               <Text className="t-sub">服务对象</Text>
               <Text className="t-strong">王秀芳（子女代下单）</Text>
+            </View>
+          ) : null}
+          {/* 子女代下单：可指定角色（可选，默认不指定）。老人直用不渲染此块，步骤数不变 */}
+          {elderUserId ? (
+            <View className="col mt-16">
+              <Text className="t-sub">想找哪类陪伴（可不选）</Text>
+              <View className="row gap-16 mt-16" style="flex-wrap: wrap;">
+                <Text
+                  className={`slot-chip ${preferredRole === '' ? 'active' : ''}`}
+                  onClick={() => setPreferredRole('')}
+                >
+                  不指定
+                </Text>
+                {OPEN_COMPANION_ROLES.map((r) => (
+                  <Text
+                    key={r}
+                    className={`slot-chip ${preferredRole === r ? 'active' : ''}`}
+                    onClick={() => setPreferredRole(r)}
+                  >
+                    {COMPANION_ROLE_LABELS[r]}
+                  </Text>
+                ))}
+              </View>
             </View>
           ) : null}
           <View className="row-between mt-16">

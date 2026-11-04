@@ -7,6 +7,7 @@
 // ============================================================================
 
 import type {
+  companion_role,
   ApplicationStatusDTO,
   ComplaintDTO,
   ConversationDTO,
@@ -50,6 +51,8 @@ export interface CompanionLoginUser {
 export interface CompanionSelfView {
   id: string
   status: string
+  /** 供给角色（契约 §15.8：GET /companion/me 出参 +role） */
+  role: companion_role
   creditScore: number
   /** 是否被限制接单（风控/信用限制） */
   limited: boolean

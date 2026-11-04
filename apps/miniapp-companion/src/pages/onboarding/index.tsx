@@ -7,7 +7,9 @@ import ConfirmModal from '@/components/confirm-modal'
 import {
   completeTraining,
   fetchMyApplication,
+  fetchMyCompanion,
   payDeposit,
+  submitApplication,
   submitCriminal,
   submitExam,
   submitFace,
@@ -17,8 +19,8 @@ import { startFacialVerify } from '@/services/wx/wechat'
 import { useRequireAuth } from '@/utils/hooks'
 import { fenToYuan } from '@/utils/format'
 import { DEFAULT_DEPOSIT_FEN, ONBOARDING_STEPS, STEP_STATUS_META } from '@/constants'
-import type { ApplicationStatusDTO } from '@/types'
-import { application_stage, step_status } from '@linban/shared'
+import type { ApplicationStatusDTO, CompanionSelfView } from '@/types'
+import { COMPANION_ROLE_LABELS, OPEN_COMPANION_ROLES, application_stage, companion_role, step_status } from '@linban/shared'
 
 // ============================================================================
 // 入驻四审分步流程（契约 §4.1）
@@ -30,9 +32,23 @@ import { application_stage, step_status } from '@linban/shared'
 // TODO(联调)：无犯罪材料需接 COS STS 直传（POST /files/sts），此处用文件名占位。
 // ============================================================================
 
+/**
+ * 角色卡片短句说明（话术红线见 ARCHITECTURE §15.9 / PRD §3.2）。
+ * 中文标签一律取 COMPANION_ROLE_LABELS，这里只放一句大白话说明；
+ * 两档允许/禁止的用词边界以契约为准，不在代码里复述禁用词。
+ */
+const ROLE_BRIEF: Partial<Record<companion_role, string>> = {
+  SHARED_SON: '陪聊天、教手机、陪着逛逛，按时计酬。',
+  PROFESSIONAL: '可陪诊、辅助康复、留意健康情况。',
+}
+
 export default function OnboardingPage() {
   useRequireAuth()
   const [app, setApp] = useState<ApplicationStatusDTO | null>(null)
+  const [self, setSelf] = useState<CompanionSelfView | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  // 入驻申请时选择的供给角色，默认取两个开放值里的第一个
+  const [selectedRole, setSelectedRole] = useState<companion_role>(OPEN_COMPANION_ROLES[0])
   const [name, setName] = useState('')
   const [idCard, setIdCard] = useState('')
   const [criminalFile, setCriminalFile] = useState('')
@@ -41,8 +57,14 @@ export default function OnboardingPage() {
   const [showDeposit, setShowDeposit] = useState(false)
 
   const load = useCallback(async () => {
-    const a = await fetchMyApplication().catch(() => null)
+    const [a, s] = await Promise.all([
+      fetchMyApplication().catch(() => null),
+      fetchMyCompanion().catch(() => null),
+    ])
     setApp(a)
+    setSelf(s)
+    if (s) setSelectedRole(s.role)
+    setLoaded(true)
   }, [])
 
   useDidShow(load)
@@ -113,7 +135,22 @@ export default function OnboardingPage() {
     await run(() => payDeposit({ amountFen: DEFAULT_DEPOSIT_FEN }), '保证金已缴纳')
   }
 
-  if (!app) {
+  /** 提交入驻申请（四审流起点）：带上选择的供给角色 */
+  const handleApply = () =>
+    run(
+      () =>
+        submitApplication({
+          nickname: '张阿姨',
+          hourlyRateFen: '12000',
+          serviceRadiusM: 5000,
+          tags: [],
+          companionRole: selectedRole,
+        }),
+      '入驻申请已提交',
+    )
+
+  // 加载完成前不闪申请表单
+  if (!loaded) {
     return (
       <PageWrap>
         <Text className="t-sub px-28 mt-24">加载中…</Text>
@@ -121,9 +158,55 @@ export default function OnboardingPage() {
     )
   }
 
+  // 尚未提交申请：先选角色再提交（角色卡片只展示两个开放值，§15.9）
+  if (!app) {
+    return (
+      <PageWrap>
+        <View className="card">
+          <Text className="t-title">申请入驻</Text>
+          <Text className="t-sub mt-16" style="display: block;">
+            选一个服务角色，提交后开始四项审核。
+          </Text>
+          <View className="col gap-16 mt-16">
+            {OPEN_COMPANION_ROLES.map((r) => (
+              <View
+                key={r}
+                className={`col gap-8 ${selectedRole === r ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setSelectedRole(r)}
+              >
+                <Text className="t-strong">{COMPANION_ROLE_LABELS[r]}</Text>
+                <Text className="t-weak">{ROLE_BRIEF[r]}</Text>
+              </View>
+            ))}
+          </View>
+          <View className="btn-primary btn-block mt-24" onClick={handleApply}>
+            提交入驻申请
+          </View>
+          <View className="btn-ghost btn-block mt-16" onClick={() => load()}>
+            返回审核进度
+          </View>
+        </View>
+      </PageWrap>
+    )
+  }
+
   return (
     <PageWrap>
       <StepProgress steps={ONBOARDING_STEPS.map((s) => s.title)} current={Math.min(currentStep, 4)} />
+
+      {/* 当前服务角色（§15.9：我的资料/工作台可见角色） */}
+      <View className="card">
+        <View className="row-between">
+          <Text className="t-sub">当前服务角色</Text>
+          <Text className="t-strong">{self ? COMPANION_ROLE_LABELS[self.role] : '-'}</Text>
+        </View>
+        <View className="btn-ghost btn-block mt-16" onClick={() => setApp(null)}>
+          修改角色并重新提交
+        </View>
+        <Text className="t-weak mt-16" style="display: block;">
+          重新提交会从第一项审核重新开始。
+        </Text>
+      </View>
 
       {/* 状态说明 */}
       <View className="card">

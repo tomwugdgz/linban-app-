@@ -3,7 +3,7 @@ import { http } from './request';
 import type { BlacklistItem, Companion, PageQuery, PageResult } from '@/shared/types';
 
 export const companionApi = {
-  list(params: PageQuery & { status?: string; keyword?: string; creditSort?: 'asc' | 'desc' }) {
+  list(params: PageQuery & { status?: string; role?: string; keyword?: string; creditSort?: 'asc' | 'desc' }) {
     return http.get<PageResult<Companion>>('/admin/companions', params);
   },
   /** 契约：手动调整信用分（留痕 credit_logs） */

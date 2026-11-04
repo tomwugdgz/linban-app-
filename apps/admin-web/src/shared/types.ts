@@ -178,6 +178,8 @@ export interface CompanionApplication {
   id: string;
   applicationNo: string;
   companionId: string;
+  /** 申请人角色（架构 §15.8：后台四审列表出参 +role，经 companion.role 读取） */
+  role?: string;
   companionName: string;      // 脱敏姓名
   phoneMasked: string;
   stage: string;
@@ -212,6 +214,8 @@ export interface CompanionApplication {
 export interface Companion {
   id: string;
   userId: string;
+  /** 供给角色（架构 §15.8：GET /admin/companions 出参 +role） */
+  role: string;
   nameMasked: string;
   phoneMasked: string;
   status: string;

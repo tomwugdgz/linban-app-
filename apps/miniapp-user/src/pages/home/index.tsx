@@ -11,7 +11,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
 import { fenToYuan } from '@/utils/format'
 import { CS_PHONE } from '@/constants'
-import type { CompanionPublicDTO, GiftCardDTO } from '@/types'
+import type { CompanionListItem, GiftCardDTO } from '@/types'
 
 // ============================================================================
 // 首页（老人优先）
@@ -25,7 +25,7 @@ export default function HomePage() {
   const user = useAuthStore((s) => s.user)
   const fontScale = useSettingsStore((s) => s.fontScale)
   const setFontScale = useSettingsStore((s) => s.setFontScale)
-  const [companions, setCompanions] = useState<CompanionPublicDTO[]>([])
+  const [companions, setCompanions] = useState<CompanionListItem[]>([])
   const [giftCard, setGiftCard] = useState<GiftCardDTO | null>(null)
 
   const load = async () => {

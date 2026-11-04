@@ -23,6 +23,9 @@ import type {
 } from '@/types'
 import { CS_PHONE } from '@/constants'
 import {
+  companion_role,
+  companion_role_values,
+  OPEN_COMPANION_ROLES,
   order_status,
   application_stage,
   step_status,
@@ -166,8 +169,14 @@ on('GET', '/auth/profile', () => {
 // 入驻四审（契约 §4.1）
 // ---------------------------------------------------------------------------
 
-on('POST', '/companion/applications', () => {
+on('POST', '/companion/applications', ({ data }) => {
   const db = getDb()
+  // 契约 §15.6：入参接受四值全集，但只开放 SHARED_SON / PROFESSIONAL；
+  // 预留值必须明确拒绝（13016），不得静默回落为 SHARED_SON。
+  const role = String(data?.companionRole || '')
+  if (!companion_role_values.includes(role as companion_role)) bizError(10001, '角色格式不正确')
+  if (!(OPEN_COMPANION_ROLES as readonly string[]).includes(role)) bizError(13016, '该供给角色暂未开放')
+  db.self.role = role as companion_role
   db.application = {
     ...db.application,
     stage: application_stage.APPLIED,

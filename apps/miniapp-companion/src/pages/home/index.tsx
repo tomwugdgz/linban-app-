@@ -10,7 +10,7 @@ import { useRequireCompanion } from '@/utils/hooks'
 import { fenToYuan, formatDateWithWeekday, formatTime, durationText } from '@/utils/format'
 import { APPLICATION_STAGE_META, COMPANION_STATUS_META, ONBOARDING_STEPS } from '@/constants'
 import type { ApplicationStatusDTO, CompanionOrderView, CompanionSelfView, IncomeOverview } from '@/types'
-import { order_status } from '@linban/shared'
+import { COMPANION_ROLE_LABELS, order_status } from '@linban/shared'
 
 // ============================================================================
 // 陪聊员工作台（首页）
@@ -75,6 +75,9 @@ export default function HomePage() {
 
         {self ? (
           <View className="row mt-16" style="flex-wrap: wrap; gap: 16rpx;">
+            <View className="tag-plain" style="color: var(--brand);">
+              {COMPANION_ROLE_LABELS[self.role]}
+            </View>
             <View className="tag-plain">完成 {self.completedOrders} 单</View>
             <View className="tag-plain">评分 {self.ratingAvg}</View>
             <View className="tag-plain">保证金 {fenToYuan(self.depositBalanceFen, true)}</View>
